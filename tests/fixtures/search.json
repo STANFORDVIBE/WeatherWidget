@@ -1,0 +1,5 @@
+{"results":[
+{"id":2950159,"name":"Берлин","latitude":52.52437,"longitude":13.41053,"elevation":74.0,"feature_code":"PPLC","country_code":"DE","timezone":"Europe/Berlin","country":"Германия","admin1":"Берлин"},
+{"id":5084868,"name":"Берлин","latitude":44.46867,"longitude":-71.18508,"elevation":311.0,"feature_code":"PPL","country_code":"US","timezone":"America/New_York","country":"США","admin1":"Нью-Гэмпшир"},
+{"id":1,"name":"Без координат","country":"Нигде"}
+],"generationtime_ms":1.2}
