@@ -18,7 +18,7 @@ namespace WeatherWidget
 
         readonly string settingsPath;
         readonly WeatherService weather;
-        City home = Cities.Favorites[0];   // город, выбранный пользователем
+        City home;                         // город, выбранный пользователем (null — ещё не выбран)
         City target;                       // город, который сейчас загружается/показывается
         WeatherData data;
         string error;
@@ -73,6 +73,8 @@ namespace WeatherWidget
                 if (dynamic) { rotation.Restart(); dynTimer.Start(); Fetch(rotation.Next()); }
                 else Fetch(home);
             };
+            // город ещё не выбран — сразу предложить выбрать
+            Shown += delegate { if (home == null && !dynamic) ShowCityMenu(); };
         }
 
         void ApplySettings(Settings s)
@@ -186,7 +188,15 @@ namespace WeatherWidget
             dynItem.Checked = on;
             dynTimer.Stop();
             if (on) { rotation.Restart(); dynTimer.Start(); Fetch(rotation.Next()); }
-            else Fetch(home);
+            else if (home != null) Fetch(home);
+            else
+            {
+                // динамику выключили, а свой город ещё не выбран — вернуться к выбору города
+                target = null;
+                data = null;
+                error = null;
+                ShowCityMenu();
+            }
             SaveSettings();
         }
 

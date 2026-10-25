@@ -3,8 +3,8 @@ using System.Collections.ObjectModel;
 
 namespace WeatherWidget
 {
-    // «Свои» города — найденные через поиск. Показываются в меню под стандартными.
-    // Хранится не больше Max, самые старые вытесняются; стандартные города сюда не попадают.
+    // «Свои» города — выбранные пользователем через поиск. Это и есть список городов в меню.
+    // Хранится не больше Max, самые старые вытесняются.
     sealed class CustomCities
     {
         public const int Max = 10;
@@ -16,7 +16,7 @@ namespace WeatherWidget
         // Запомнить город (повторный выбор переносит его в конец списка)
         public void Remember(City c)
         {
-            if (c == null || Cities.IsStandard(c)) return;
+            if (c == null) return;
             items.RemoveAll(x => x.Same(c));
             items.Add(c);
             while (items.Count > Max) items.RemoveAt(0);
@@ -25,7 +25,7 @@ namespace WeatherWidget
         // Добавить, только если такого ещё нет (порядок не меняется)
         public void AddIfMissing(City c)
         {
-            if (c == null || Cities.IsStandard(c) || Contains(c)) return;
+            if (c == null || Contains(c)) return;
             Remember(c);
         }
 

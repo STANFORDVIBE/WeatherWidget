@@ -13,6 +13,11 @@ namespace WeatherWidget.Tests
         static int passed, failed;
         static string fixtures;
 
+        // тестовые города (предустановленных городов в виджете нет)
+        static readonly City Moscow = new City("Москва", "Россия", 55.7558, 37.6173);
+        static readonly City Spb = new City("Санкт-Петербург", "Россия", 59.9343, 30.3351);
+        static readonly City Omsk = new City("Омск", "Россия", 54.9885, 73.3242);
+
         [STAThread]
         static int Main()
         {
@@ -39,6 +44,7 @@ namespace WeatherWidget.Tests
             Run("Цепочка источников: Open-Meteo → MET Norway → кэш", ServiceFallback);
             Run("Давность данных и приписка к подсказке", AgeAndNotes);
             Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
+            Run("Первый запуск: город не выбран", FirstStart);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -138,7 +144,7 @@ namespace WeatherWidget.Tests
 
         static void ParseForecast()
         {
-            City moscow = Cities.Favorites[0];
+            City moscow = Moscow;
             WeatherData d = OpenMeteo.ParseForecast(moscow, Fixture("forecast.json"));
             Check(ReferenceEquals(moscow, d.City), "город сохраняется");
             Eq(7.4, d.Temp, "температура");
@@ -189,7 +195,6 @@ namespace WeatherWidget.Tests
 
         static void CityLists()
         {
-            Eq(6, Cities.Favorites.Length, "стандартных городов");
             Eq(35, Cities.World.Length, "городов «динамической погоды»");
             HashSet<string> names = new HashSet<string>();
             foreach (City c in Cities.World)
@@ -199,15 +204,16 @@ namespace WeatherWidget.Tests
                 Check(Math.Abs(c.Lat) <= 90 && Math.Abs(c.Lon) <= 180, "координаты в допустимых пределах: " + c.Name);
             }
             Eq("Лондон, Великобритания", Cities.World[2].MenuLabel, "подпись зарубежного города");
-            Eq("Омск", Cities.Favorites[2].MenuLabel, "подпись российского города");
-            Check(Cities.IsStandard(new City("Омск", "Россия", 54.99, 73.32)), "Омск — стандартный (координаты чуть другие)");
+            Eq("Омск", Omsk.MenuLabel, "подпись российского города — без страны");
+            Check(Omsk.Same(new City("Омск", "Россия", 54.99, 73.32)), "тот же город при чуть других координатах");
         }
 
         static void CustomCitiesList()
         {
             CustomCities list = new CustomCities();
-            list.Remember(Cities.Favorites[2]);
-            Eq(0, list.Count, "стандартный город не добавляется");
+            Eq(0, list.Count, "сначала своих городов нет — предустановленных тоже");
+            list.Remember(null);
+            Eq(0, list.Count, "пустой город не добавляется");
 
             City london = new City("Лондон", "Великобритания", 51.5085, -0.12574);
             City kazan = new City("Казань", "Россия", 55.7887, 49.1221);
@@ -291,7 +297,7 @@ namespace WeatherWidget.Tests
             // самая первая версия: только название города, файл с BOM
             File.WriteAllText(path, "city=Омск\r\nx=10\r\ny=20\r\ntopmost=0\r\n", new UTF8Encoding(true));
             Settings l = Settings.Load(path);
-            Check(ReferenceEquals(Cities.Favorites[2], l.Home), "Омск — стандартный экземпляр");
+            Check(l.Home == null, "город без координат не восстановить — виджет попросит выбрать город");
             Eq(new Point(10, 20), l.Position.GetValueOrDefault(), "положение");
             Check(!l.Scale.HasValue, "масштаб не задан");
             Eq(0, l.Custom.Count, "своих городов нет");
@@ -329,7 +335,7 @@ namespace WeatherWidget.Tests
 
         static void MetNoParse()
         {
-            WeatherData d = MetNo.ParseForecast(Cities.Favorites[0], Fixture("metno.json"), 10800);
+            WeatherData d = MetNo.ParseForecast(Moscow, Fixture("metno.json"), 10800);
             Eq(MetNo.Name, d.Source, "источник");
             Eq(7.4, d.Temp, "температура");
             Eq(55, d.Humidity, "влажность округляется");
@@ -353,7 +359,7 @@ namespace WeatherWidget.Tests
         {
             string dir = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tests", Guid.NewGuid().ToString("N"));
             WeatherCache cache = new WeatherCache(dir);
-            City c = Cities.Favorites[0];
+            City c = Moscow;
             Check(cache.Load(c, TimeSpan.FromDays(3)) == null, "пустой кэш");
 
             WeatherData d = OpenMeteo.ParseForecast(c, Fixture("forecast.json"));
@@ -376,7 +382,7 @@ namespace WeatherWidget.Tests
                 Check(!l.Stale, "сам кэш не помечает данные устаревшими");
             }
             Check(cache.Load(c, TimeSpan.FromHours(1)) == null, "старше допустимого — не используется");
-            Check(cache.Load(Cities.Favorites[1], TimeSpan.FromDays(3)) == null, "другой город — свой файл");
+            Check(cache.Load(Spb, TimeSpan.FromDays(3)) == null, "другой город — свой файл");
 
             File.WriteAllText(Directory.GetFiles(dir)[0], "мусор\nfetched=вчера\n", Encoding.UTF8);
             Check(cache.Load(c, TimeSpan.FromDays(3)) == null, "повреждённый файл — null, а не ошибка");
@@ -396,7 +402,7 @@ namespace WeatherWidget.Tests
                 throw new System.Net.WebException("нет связи");
             };
             WeatherService svc = new WeatherService(fakeNet, new WeatherCache(dir), 0);
-            City moscow = Cities.Favorites[0];
+            City moscow = Moscow;
 
             WeatherData d = svc.Get(moscow);
             Check(d != null && d.Source == OpenMeteo.Name && !d.Stale, "всё работает — Open-Meteo");
@@ -413,15 +419,15 @@ namespace WeatherWidget.Tests
             Check(d != null && d.Stale, "оба упали — кэш, помеченный как устаревший");
             Eq(MetNo.Name, d != null ? d.Source : null, "в кэше — последние полученные данные");
 
-            Check(svc.Get(Cities.Favorites[1]) == null, "оба упали и кэша нет — null");
+            Check(svc.Get(Spb) == null, "оба упали и кэша нет — null");
 
             // новый запуск программы: часовой пояс для MET берётся из кэша Open-Meteo, иначе — оценка по долготе
             omUp = true;
             WeatherService first = new WeatherService(fakeNet, new WeatherCache(dir), 0);
-            first.Get(Cities.Favorites[1]);   // в кэше Петербурга — данные Open-Meteo
+            first.Get(Spb);   // в кэше Петербурга — данные Open-Meteo
             omUp = false; metUp = true;
             WeatherService restarted = new WeatherService(fakeNet, new WeatherCache(dir), 0);
-            WeatherData spb = restarted.Get(Cities.Favorites[1]);
+            WeatherData spb = restarted.Get(Spb);
             Eq(10800, spb != null ? spb.UtcOffset : 0, "пояс из кэша");
             WeatherData la = restarted.Get(Cities.World[0]);
             Eq(-8 * 3600, la != null ? la.UtcOffset : 0, "пояс по долготе, если ничего не известно");
@@ -453,7 +459,7 @@ namespace WeatherWidget.Tests
             {
                 string path = TempFile();
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, "city=Омск\nscale=" + scale.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+                File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\nscale=" + scale.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
                 using (WeatherForm f = new WeatherForm(path))
                 {
                     f.Show();
@@ -464,6 +470,20 @@ namespace WeatherWidget.Tests
                 }
                 Directory.Delete(Path.GetDirectoryName(path), true);
             }
+        }
+
+        static void FirstStart()
+        {
+            string path = TempFile();   // настроек нет
+            using (WeatherForm f = new WeatherForm(path))
+            {
+                Check(f.Home == null, "город не выбран");
+                Eq(0, f.Custom.Count, "предустановленных городов нет");
+                using (Bitmap b = f.RenderPreview(null, false, 0))
+                    Check(b.Width == 240, "карточка «Выберите город» рисуется");
+            }
+            string dir = Path.GetDirectoryName(path);
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
 
         static void SettingsBroken()

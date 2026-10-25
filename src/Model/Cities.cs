@@ -1,19 +1,9 @@
 namespace WeatherWidget
 {
-    // Встроенные списки городов
+    // Встроенный список городов. Предустановленных городов для выбора нет:
+    // пользователь находит свой город поиском, и он запоминается (CustomCities).
     static class Cities
     {
-        // Стандартные города России в меню выбора
-        public static readonly City[] Favorites = new City[]
-        {
-            new City("Москва", "Россия", 55.7558, 37.6173),
-            new City("Санкт-Петербург", "Россия", 59.9343, 30.3351),
-            new City("Омск", "Россия", 54.9885, 73.3242),
-            new City("Ростов-на-Дону", "Россия", 47.2357, 39.7015),
-            new City("Челябинск", "Россия", 55.1644, 61.4368),
-            new City("Ханты-Мансийск", "Россия", 61.0042, 69.0019)
-        };
-
         // Города для режима «Динамическая погода»
         public static readonly City[] World = new City[]
         {
@@ -53,18 +43,5 @@ namespace WeatherWidget
             new City("Мумбаи", "Индия", 19.0760, 72.8777),
             new City("Ханой", "Вьетнам", 21.0278, 105.8342)
         };
-
-        public static bool IsStandard(City c)
-        {
-            foreach (City f in Favorites) if (f.Same(c)) return true;
-            return false;
-        }
-
-        // Стандартный город с таким названием или null
-        public static City FindFavorite(string name)
-        {
-            foreach (City f in Favorites) if (f.Name == name) return f;
-            return null;
-        }
     }
 }

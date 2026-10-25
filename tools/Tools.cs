@@ -13,6 +13,12 @@ namespace WeatherWidget.Tools
     //   WeatherWidget.Tools.exe screenshots <папка>    — картинки для README
     static class Program
     {
+        // города для картинок
+        static readonly City Moscow = new City("Москва", "Россия", 55.7558, 37.6173);
+        static readonly City Spb = new City("Санкт-Петербург", "Россия", 59.9343, 30.3351);
+        static readonly City Omsk = new City("Омск", "Россия", 54.9885, 73.3242);
+        static readonly City Khanty = new City("Ханты-Мансийск", "Россия", 61.0042, 69.0019);
+
         [STAThread]
         static int Main(string[] args)
         {
@@ -124,15 +130,15 @@ namespace WeatherWidget.Tools
             {
                 // Ряд карточек с разной погодой
                 List<Bitmap> cards = new List<Bitmap>();
-                cards.Add(form.RenderPreview(Sample(Cities.Favorites[0], 18, 0, true, 10800), false, 30));
-                cards.Add(form.RenderPreview(Sample(Cities.Favorites[1], 7, 3, true, 10800), false, 30));
+                cards.Add(form.RenderPreview(Sample(Moscow, 18, 0, true, 10800), false, 30));
+                cards.Add(form.RenderPreview(Sample(Spb, 7, 3, true, 10800), false, 30));
                 cards.Add(form.RenderPreview(Sample(Cities.World[2], 11, 63, true, 0), false, 30));
-                cards.Add(form.RenderPreview(Sample(Cities.Favorites[5], -12, 73, true, 18000), false, 30));
-                cards.Add(form.RenderPreview(Sample(Cities.Favorites[2], -4, 0, false, 21600), false, 30));
+                cards.Add(form.RenderPreview(Sample(Khanty, -12, 73, true, 18000), false, 30));
+                cards.Add(form.RenderPreview(Sample(Omsk, -4, 0, false, 21600), false, 30));
                 SaveRow(cards, null, Path.Combine(dir, "preview.png"));
 
                 // Раскрытый прогноз и подсказка
-                WeatherData d = Sample(Cities.Favorites[0], 9, 2, true, 10800);
+                WeatherData d = Sample(Moscow, 9, 2, true, 10800);
                 d.Feels = 6; d.Wind = 4.5; d.Humidity = 72;
                 Bitmap expanded = form.RenderPreview(d, true, 30);
                 Bitmap tip;

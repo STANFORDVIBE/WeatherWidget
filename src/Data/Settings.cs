@@ -11,7 +11,7 @@ namespace WeatherWidget
     // %APPDATA%\WeatherWidget\settings.txt
     sealed class Settings
     {
-        public City Home;                    // null — не задан (тогда Москва)
+        public City Home;                    // null — город ещё не выбран
         public Point? Position;              // положение окна на экране
         public bool TopMost;
         public bool Dynamic;                 // «Динамическая погода»
@@ -66,12 +66,11 @@ namespace WeatherWidget
                 }
 
                 if (x.HasValue && y.HasValue) s.Position = new Point(x.Value, y.Value);
-                if (name != null)
+                // город без координат (самые старые настройки) не восстановить — тогда виджет попросит выбрать город
+                if (name != null && !double.IsNaN(lat) && !double.IsNaN(lon))
                 {
-                    if (!double.IsNaN(lat) && !double.IsNaN(lon)) s.Home = new City(name, country, lat, lon);
-                    City fav = Cities.FindFavorite(name);   // стандартный город (и совместимость со старыми настройками без координат)
-                    if (fav != null) s.Home = fav;
-                    s.Custom.AddIfMissing(s.Home);          // свой город, выбранный до появления списка своих городов
+                    s.Home = new City(name, country, lat, lon);
+                    s.Custom.AddIfMissing(s.Home);   // выбранный город всегда есть в списке
                 }
             }
             catch { }

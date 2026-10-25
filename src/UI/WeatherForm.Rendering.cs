@@ -157,12 +157,12 @@ namespace WeatherWidget
         void DrawContent(Graphics g, WeatherData d, float bh)
         {
             City shown = d != null ? d.City : target;
-            if (shown != null)
-                g.DrawString(shown.Name + " ▾", fCity, Brushes.White, cityRect, cityFmt);
+            g.DrawString((shown != null ? shown.Name : "Выберите город") + " ▾", fCity, Brushes.White, cityRect, cityFmt);
 
             if (d == null)
             {
-                g.DrawString(error ?? "Загрузка…", fDesc, Brushes.White, new RectangleF(0, 0, W, bh), center);
+                string msg = error ?? (shown == null ? "Нажмите «Выберите город»\nи найдите свой город" : "Загрузка…");
+                g.DrawString(msg, fDesc, Brushes.White, new RectangleF(0, 0, W, bh), center);
                 return;
             }
 

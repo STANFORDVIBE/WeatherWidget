@@ -5,7 +5,7 @@ using System.Windows.Forms;
 
 namespace WeatherWidget
 {
-    // Меню выбора города: поиск по миру, стандартные города России и «свои» города.
+    // Меню выбора города: поиск по миру и список выбранных ранее («своих») городов.
     // Одинаковое меню живёт в двух местах — по клику на название и в меню правой кнопки.
     sealed class CityMenu
     {
@@ -13,7 +13,6 @@ namespace WeatherWidget
         readonly ToolStripDropDown dd;
         readonly ToolStripTextBox box = new ToolStripTextBox();
         readonly List<ToolStripItem> results = new List<ToolStripItem>();
-        readonly List<ToolStripMenuItem> favItems = new List<ToolStripMenuItem>();
         readonly List<ToolStripItem> customItems = new List<ToolStripItem>();
         readonly System.Windows.Forms.Timer debounce = new System.Windows.Forms.Timer();
 
@@ -34,36 +33,30 @@ namespace WeatherWidget
 
             dd.Items.Add(box);
             dd.Items.Add(new ToolStripSeparator());
-            foreach (City c in Cities.Favorites)
-            {
-                ToolStripMenuItem it = new ToolStripMenuItem(c.Name);
-                it.Tag = c;
-                it.Click += OnPick;
-                favItems.Add(it);
-                dd.Items.Add(it);
-            }
             CustomCityItem.KeepOpenOnRemove(dd);
             dd.Opening += delegate { RebuildCustom(); };
             dd.Opened += delegate
             {
                 box.Text = "";
                 ClearResults();
-                foreach (ToolStripMenuItem it in favItems) it.Checked = IsCurrent((City)it.Tag);
                 box.Focus();
             };
         }
 
         bool IsCurrent(City c) { return !form.Dynamic && c.Same(form.Home); }
 
-        // «Свои» города — отдельным блоком под стандартными
+        // Свои города — под строкой поиска; пока их нет — подсказка
         void RebuildCustom()
         {
             foreach (ToolStripItem it in customItems) { dd.Items.Remove(it); it.Dispose(); }
             customItems.Clear();
-            if (form.Custom.Count == 0) return;
-            ToolStripSeparator sep = new ToolStripSeparator();
-            customItems.Add(sep);
-            dd.Items.Add(sep);
+            if (form.Custom.Count == 0)
+            {
+                ToolStripItem hint = Status("Найдите свой город через поиск");
+                customItems.Add(hint);
+                dd.Items.Add(hint);
+                return;
+            }
             foreach (City c in form.Custom.Items)
             {
                 CustomCityItem it = new CustomCityItem(c.MenuLabel);

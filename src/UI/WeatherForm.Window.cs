@@ -131,16 +131,19 @@ namespace WeatherWidget
             if (bp.Y > BaseH) return;   // ниже карточки — пусто
             HideTip();
             if (BtnHit(bp)) { ToggleForecast(); return; }
-            if (cityRect.Contains(bp))
-            {
-                cityPopup.Show(this, new Point((int)(20 * scale), (int)(cityRect.Bottom * scale)));
-                return;
-            }
+            if (cityRect.Contains(bp)) { ShowCityMenu(); return; }
             if (e.Clicks == 2) { SetDynamic(!dynamic); return; }   // двойной клик — вкл/выкл «динамическую погоду»
 
             NativeMethods.ReleaseCapture();   // перетаскивание окна
             NativeMethods.SendMessage(Handle, NativeMethods.WM_NCLBUTTONDOWN, NativeMethods.HTCAPTION, 0);
             SaveSettings();
+        }
+
+        // Список городов с поиском — под названием города
+        void ShowCityMenu()
+        {
+            HideTip();
+            cityPopup.Show(this, new Point((int)(20 * scale), (int)(cityRect.Bottom * scale)));
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
