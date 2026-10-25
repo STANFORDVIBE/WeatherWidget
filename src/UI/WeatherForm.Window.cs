@@ -165,6 +165,7 @@ namespace WeatherWidget
             Cursor = cityRect.Contains(bp) || btnHover ? Cursors.Hand : Cursors.Default;
 
             TipKind want = TipKind.None;
+            if (picker != null) { HideTip(); return; }   // пока открыт выбор города — без подсказок
             if (data != null && cityRect.Contains(bp)) want = TipKind.City;
             else if (data != null && tempRect.Contains(bp)) want = TipKind.Temp;
             if (want == tipShown) return;
@@ -187,7 +188,7 @@ namespace WeatherWidget
 
         void HideTip()
         {
-            if (tipShown != TipKind.None) { tip.Hide(); tipShown = TipKind.None; }
+            if (tipShown != TipKind.None) { tip.HideTip(); tipShown = TipKind.None; }
         }
     }
 }

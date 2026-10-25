@@ -40,7 +40,27 @@ namespace WeatherWidget
         {
             // подсказка «прозрачна» для мыши — курсор над ней не уводит мышь с виджета
             if (m.Msg == NativeMethods.WM_NCHITTEST) { m.Result = (IntPtr)NativeMethods.HTTRANSPARENT; return; }
+            if (m.Msg == NativeMethods.WM_MOUSEACTIVATE) { m.Result = (IntPtr)NativeMethods.MA_NOACTIVATE; return; }
             base.WndProc(ref m);
+        }
+
+        bool shown;
+
+        // Показ и скрытие — напрямую через Windows, а не Form.Show(): WinForms при показе формы
+        // передаёт ей фокус, и открытая панель выбора города теряла его и закрывалась.
+        void ShowNoActivate()
+        {
+            NativeMethods.SetWindowPos(Handle, NativeMethods.HWND_TOPMOST, Left, Top, Width, Height, NativeMethods.SWP_NOACTIVATE);
+            NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
+            Invalidate();
+            shown = true;
+        }
+
+        public void HideTip()
+        {
+            if (!shown) return;
+            NativeMethods.ShowWindow(Handle, NativeMethods.SW_HIDE);
+            shown = false;
         }
 
         Size SetText(string t, string b)
@@ -73,8 +93,7 @@ namespace WeatherWidget
             int y = at.Y + h <= wa.Bottom ? at.Y : at.Y - h - 30;
             y = Math.Max(wa.Top, y);
             Bounds = new Rectangle(x, y, w, h);
-            Invalidate();
-            if (!Visible) Show();
+            ShowNoActivate();
         }
 
         protected override void OnPaint(PaintEventArgs e)
