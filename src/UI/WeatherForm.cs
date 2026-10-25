@@ -79,6 +79,7 @@ namespace WeatherWidget
         {
             if (s.Home != null) home = s.Home;
             dynamic = s.Dynamic;
+            if (s.Transparency.HasValue) bgTransparency = Math.Max(0, Math.Min(MaxTransparency, s.Transparency.Value));
             TopMost = s.TopMost;
             if (s.Scale.HasValue)
             {
@@ -103,6 +104,7 @@ namespace WeatherWidget
             s.TopMost = TopMost;
             s.Dynamic = dynamic;
             s.Scale = scale;
+            s.Transparency = bgTransparency;
             foreach (City c in custom.Items) s.Custom.Remember(c);
             s.Save(settingsPath);
         }
@@ -115,6 +117,7 @@ namespace WeatherWidget
             menu.Items.Add(dynItem);
             menu.Items.Add("Обновить", null, delegate { Fetch(target); });
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Прозрачность…", null, delegate { ShowOpacityPanel(); });
             topMostItem.Checked = TopMost;
             topMostItem.Click += delegate { TopMost = !TopMost; topMostItem.Checked = TopMost; SaveSettings(); };
             menu.Items.Add(topMostItem);

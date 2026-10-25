@@ -48,6 +48,7 @@ namespace WeatherWidget.Tests
             Run("Первый запуск: город не выбран", FirstStart);
             Run("Панель выбора города", Picker);
             Run("Подсказка в стиле виджета", Tooltip);
+            Run("Прозрачность фона", Transparency);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -564,6 +565,39 @@ namespace WeatherWidget.Tests
                     Check(b.GetPixel(1, 1).A == 0 && b.GetPixel(b.Width / 2, b.Height / 2).A > 200, "вокруг прозрачно, панель непрозрачная");
                 Check(shortW < longW, "короткая подсказка — узкая");
             }
+        }
+
+        static void Transparency()
+        {
+            string path = TempFile();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\ntransparency=50\n", Encoding.UTF8);
+            using (WeatherForm f = new WeatherForm(path))
+            {
+                Eq(50, f.BgTransparency, "загружается из настроек");
+                WeatherData d = OpenMeteo.ParseForecast(Omsk, Fixture("forecast.json"));
+                using (Bitmap b = f.RenderPreview(d, false, 0))
+                {
+                    int bgA = b.GetPixel(14, 240).A;   // пустой фон у нижнего левого угла
+                    Check(bgA > 110 && bgA < 145, "при 50% фон полупрозрачный (альфа " + bgA + ")");
+                    int textA = 0;   // самый непрозрачный пиксель в цифрах температуры
+                    for (int x = 60; x < 180; x++) for (int y = 145; y < 190; y++) textA = Math.Max(textA, b.GetPixel(x, y).A);
+                    Eq(255, textA, "текст температуры непрозрачный");
+                }
+                f.BgTransparency = 200;
+                Eq(WeatherForm.MaxTransparency, f.BgTransparency, "не больше максимума");
+                f.BgTransparency = -5;
+                Eq(0, f.BgTransparency, "не меньше нуля");
+                using (Bitmap b = f.RenderPreview(d, false, 0))
+                    Eq(255, (int)b.GetPixel(14, 240).A, "при 0% фон непрозрачный");
+                f.BgTransparency = 30;
+                f.SaveSettings();
+                using (OpacityPanel p = new OpacityPanel(f))
+                using (Bitmap b = p.RenderPreview())
+                    Check(b.GetPixel(b.Width / 2, b.Height / 2).A > 200, "панель с ползунком рисуется");
+            }
+            Eq(30, Settings.Load(path).Transparency.GetValueOrDefault(-1), "сохраняется в настройки");
+            Directory.Delete(Path.GetDirectoryName(path), true);
         }
 
         static void SettingsBroken()

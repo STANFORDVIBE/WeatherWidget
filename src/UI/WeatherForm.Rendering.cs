@@ -12,7 +12,22 @@ namespace WeatherWidget
         // Все анимации считаются от реального времени, а не от числа тиков таймера —
         // поэтому идут ровно, даже если таймер срабатывает неравномерно.
         const int TransMs = 600, ExpMs = 260;
-        const byte WindowAlpha = 242;   // общая непрозрачность виджета (~95%)
+        public const int MaxTransparency = 80;   // дальше фон почти исчезает и белый текст не читается
+
+        int bgTransparency = 5;         // прозрачность фона карточки, %; текст и анимация всегда непрозрачные
+
+        // Прозрачность фона карточки, 0..MaxTransparency %
+        internal int BgTransparency
+        {
+            get { return bgTransparency; }
+            set
+            {
+                int v = Math.Max(0, Math.Min(MaxTransparency, value));
+                if (v == bgTransparency) return;
+                bgTransparency = v;
+                Present();
+            }
+        }
 
         readonly System.Windows.Forms.Timer animTimer = new System.Windows.Forms.Timer();
         readonly Stopwatch clock = Stopwatch.StartNew();
@@ -109,7 +124,7 @@ namespace WeatherWidget
             int w = rc.Right - rc.Left, h = rc.Bottom - rc.Top;
             if (w <= 0 || h <= 0) return;
             scale = w / (float)W;
-            surface.Present(Handle, w, h, WindowAlpha, Render);
+            surface.Present(Handle, w, h, 255, Render);
         }
 
         void Render(Graphics g)
@@ -117,6 +132,7 @@ namespace WeatherWidget
             g.Clear(Color.Transparent);   // всё вне карточки — полностью прозрачное
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            RectangleF frame = g.VisibleClipBounds;   // размер кадра в пикселях
             g.ScaleTransform(scale, scale);   // дальше рисуем в базовых координатах (ширина 240)
             float bh = BaseH;
 
@@ -133,24 +149,52 @@ namespace WeatherWidget
                 bottom = Theme.Lerp(pb, bottom, k);
             }
 
+            // фон с настраиваемой прозрачностью; текст и анимация рисуются поверх непрозрачными
+            int bgAlpha = 255 * (100 - bgTransparency) / 100;
             RectangleF gradRect = new RectangleF(0, -1, W, bh + 2);   // с запасом, чтобы градиент не «заворачивался» на краях
             using (GraphicsPath shape = Theme.RoundRect(new RectangleF(0, 0, W, bh), 22))
             {
-                using (LinearGradientBrush bg = new LinearGradientBrush(gradRect, top, bottom, 90f))
+                using (LinearGradientBrush bg = new LinearGradientBrush(gradRect, Color.FromArgb(bgAlpha, top), Color.FromArgb(bgAlpha, bottom), 90f))
                     g.FillPath(bg, shape);
 
-                // содержимое обрезается по карточке (важно, пока прогноз выезжает)
-                g.SetClip(shape);
                 // первая половина перехода — старый город гаснет, вторая — новый проявляется
-                DrawContent(g, fading && trans < 0.5f ? prevData : data, bh);
-                g.ResetClip();
-
+                WeatherData show = fading && trans < 0.5f ? prevData : data;
                 float alpha = !fading ? 1 : (trans < 0.5f ? 1 - trans * 2 : (trans - 0.5f) * 2);
-                if (alpha < 1)
+                if (alpha >= 1)
                 {
-                    int a = (int)(255 * (1 - alpha));
-                    using (LinearGradientBrush veil = new LinearGradientBrush(gradRect, Color.FromArgb(a, top), Color.FromArgb(a, bottom), 90f))
-                        g.FillPath(veil, shape);
+                    g.SetClip(shape);   // содержимое обрезается по карточке (важно, пока прогноз выезжает)
+                    DrawContent(g, show, bh);
+                    g.ResetClip();
+                }
+                else if (alpha > 0)
+                    DrawContentFaded(g, show, bh, shape, frame, alpha);
+            }
+        }
+
+        // Содержимое с прозрачностью (смена города): рисуем его на отдельный слой и накладываем.
+        // Закрашивать цветом фона нельзя — фон может быть прозрачным, и старый город просвечивал бы.
+        void DrawContentFaded(Graphics g, WeatherData d, float bh, GraphicsPath shape, RectangleF frame, float alpha)
+        {
+            int w = (int)Math.Ceiling(frame.Width), h = (int)Math.Ceiling(frame.Height);
+            using (Bitmap layer = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppPArgb))
+            {
+                using (Graphics lg = Graphics.FromImage(layer))
+                {
+                    lg.SmoothingMode = SmoothingMode.AntiAlias;
+                    lg.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                    lg.ScaleTransform(scale, scale);
+                    lg.SetClip(shape);
+                    DrawContent(lg, d, bh);
+                }
+                System.Drawing.Imaging.ColorMatrix cm = new System.Drawing.Imaging.ColorMatrix();
+                cm.Matrix33 = alpha;
+                using (System.Drawing.Imaging.ImageAttributes ia = new System.Drawing.Imaging.ImageAttributes())
+                {
+                    ia.SetColorMatrix(cm);
+                    GraphicsState st = g.Save();
+                    g.ResetTransform();
+                    g.DrawImage(layer, new Rectangle(0, 0, w, h), 0, 0, w, h, GraphicsUnit.Pixel, ia);
+                    g.Restore(st);
                 }
             }
         }

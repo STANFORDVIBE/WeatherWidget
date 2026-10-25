@@ -139,6 +139,20 @@ namespace WeatherWidget
             SaveSettings();
         }
 
+        OpacityPanel opacityPanel;
+
+        // Панель «Прозрачность фона» под карточкой
+        void ShowOpacityPanel()
+        {
+            HideTip();
+            if (opacityPanel != null) { opacityPanel.Activate(); return; }
+            opacityPanel = new OpacityPanel(this);
+            opacityPanel.FormClosed += delegate { opacityPanel = null; };
+            Point top = PointToScreen(new Point(ClientSize.Width / 2, 0));
+            Point bottom = PointToScreen(new Point(ClientSize.Width / 2, (int)(BaseH * scale)));
+            opacityPanel.ShowNear(top.X, top.Y, bottom.Y);
+        }
+
         CityPicker picker;
         DateTime pickerClosedUtc = DateTime.MinValue;
 

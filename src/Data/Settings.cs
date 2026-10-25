@@ -16,6 +16,7 @@ namespace WeatherWidget
         public bool TopMost;
         public bool Dynamic;                 // «Динамическая погода»
         public float? Scale;                 // масштаб карточки, 1 = 100%
+        public int? Transparency;            // прозрачность фона карточки, %
         public readonly CustomCities Custom = new CustomCities();
 
         public static string DefaultPath
@@ -58,6 +59,7 @@ namespace WeatherWidget
                         case "scale":
                             if (float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out f)) s.Scale = f;
                             break;
+                        case "transparency": if (int.TryParse(v, out n)) s.Transparency = n; break;
                         case "fav":
                             City c = ParseFav(v);
                             if (c != null) s.Custom.Remember(c);
@@ -98,6 +100,7 @@ namespace WeatherWidget
                 lines.Add("topmost=" + (TopMost ? "1" : "0"));
                 lines.Add("dynamic=" + (Dynamic ? "1" : "0"));
                 if (Scale.HasValue) lines.Add("scale=" + Scale.Value.ToString("0.###", CultureInfo.InvariantCulture));
+                if (Transparency.HasValue) lines.Add("transparency=" + Transparency.Value);
                 foreach (City c in Custom.Items)
                     lines.Add("fav=" + Clean(c.Name) + "|" + Clean(c.Country) + "|" +
                         c.Lat.ToString(CultureInfo.InvariantCulture) + "|" + c.Lon.ToString(CultureInfo.InvariantCulture));
