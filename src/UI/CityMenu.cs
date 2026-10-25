@@ -141,7 +141,7 @@ namespace WeatherWidget
             ThreadPool.QueueUserWorkItem(delegate
             {
                 List<GeoResult> found = null;
-                try { found = OpenMeteo.ParseSearch(OpenMeteo.Download(url)); }
+                try { found = OpenMeteo.ParseSearch(Http.Download(url)); }
                 catch { }
 
                 form.SafeInvoke(delegate

@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -25,15 +26,16 @@ namespace WeatherWidget
             }
         }
 
-        protected override void OnHandleCreated(EventArgs e)
+        protected override void OnVisibleChanged(EventArgs e)
         {
-            base.OnHandleCreated(e);
-            Present();
+            base.OnVisibleChanged(e);
+            Present();   // первый кадр — сразу при показе
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             base.OnFormClosed(e);
+            NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
             surface.Dispose();
             tip.Dispose();
         }
@@ -50,8 +52,10 @@ namespace WeatherWidget
             base.OnResize(e);
             // Высота окна всегда соответствует раскрытой карточке (ширина × H1/W),
             // иначе раскрытый прогноз обрежется. Поправляем, если размер пришёл другим.
+            // Только у показанного окна: во время создания Windows на миг сообщает размер
+            // за вычетом рамок, и поправка «закрепила» бы неверную ширину.
             int want = (int)Math.Round(ClientSize.Width * (double)H1 / W);
-            if (!fixingSize && ClientSize.Width > 0 && ClientSize.Height != want)
+            if (Visible && !fixingSize && ClientSize.Width > 0 && ClientSize.Height != want)
             {
                 fixingSize = true;
                 ClientSize = new Size(ClientSize.Width, want);
@@ -156,7 +160,7 @@ namespace WeatherWidget
             if (want == TipKind.City)
                 tip.ShowAt("", "Страна: " + (data.City.Country == "" ? "неизвестна" : data.City.Country), at);
             else if (want == TipKind.Temp)
-                tip.ShowAt("Как ощущается", Advice.TipText(data), at);
+                tip.ShowAt("Как ощущается", Advice.TipText(data) + Advice.SourceNote(data, DateTime.UtcNow), at);
             tipShown = want;
         }
 

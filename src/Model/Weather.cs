@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace WeatherWidget
@@ -23,5 +24,9 @@ namespace WeatherWidget
         public Sky Sky;
         public int UtcOffset;               // смещение часового пояса города, секунды
         public List<DayForecast> Days = new List<DayForecast>();
+
+        public string Source = "";          // откуда данные: Open-Meteo или MET Norway
+        public DateTime FetchedUtc;         // когда получены
+        public bool Stale;                  // свежих данных нет — показан кэш
     }
 }

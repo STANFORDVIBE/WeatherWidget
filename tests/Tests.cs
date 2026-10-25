@@ -13,6 +13,7 @@ namespace WeatherWidget.Tests
         static int passed, failed;
         static string fixtures;
 
+        [STAThread]
         static int Main()
         {
             Console.OutputEncoding = Encoding.UTF8;
@@ -31,6 +32,13 @@ namespace WeatherWidget.Tests
             Run("Настройки: сохранение и загрузка", SettingsRoundTrip);
             Run("Настройки: старый формат файла", SettingsLegacy);
             Run("Настройки: повреждённый и отсутствующий файл", SettingsBroken);
+            Run("MET Norway: коды погоды", MetNoSymbols);
+            Run("MET Norway: ощущаемая температура и часовой пояс", MetNoFormulas);
+            Run("MET Norway: разбор прогноза", MetNoParse);
+            Run("Кэш погоды", Cache);
+            Run("Цепочка источников: Open-Meteo → MET Norway → кэш", ServiceFallback);
+            Run("Давность данных и приписка к подсказке", AgeAndNotes);
+            Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -288,6 +296,174 @@ namespace WeatherWidget.Tests
             Check(!l.Scale.HasValue, "масштаб не задан");
             Eq(0, l.Custom.Count, "своих городов нет");
             Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        static void MetNoSymbols()
+        {
+            Eq(0, MetNo.SymbolToWmo("clearsky_night"), "ясно");
+            Eq(1, MetNo.SymbolToWmo("fair_day"), "малооблачно");
+            Eq(2, MetNo.SymbolToWmo("partlycloudy_polartwilight"), "переменная облачность");
+            Eq(3, MetNo.SymbolToWmo("cloudy"), "облачно");
+            Eq(45, MetNo.SymbolToWmo("fog"), "туман");
+            Eq(61, MetNo.SymbolToWmo("lightrain"), "слабый дождь");
+            Eq(65, MetNo.SymbolToWmo("heavyrain"), "сильный дождь");
+            Eq(80, MetNo.SymbolToWmo("lightrainshowers_day"), "слабый ливень");
+            Eq(66, MetNo.SymbolToWmo("sleet"), "мокрый снег");
+            Eq(Sky.Rain, WeatherCodes.ToSky(MetNo.SymbolToWmo("sleet")), "мокрый снег — анимация дождя");
+            Eq(73, MetNo.SymbolToWmo("snow"), "снег");
+            Eq(95, MetNo.SymbolToWmo("lightssnowshowersandthunder_night"), "опечатка MET «lightssnow…», гроза важнее снега");
+            Eq(85, MetNo.SymbolToWmo("lightssnowshowers_day"), "опечатка MET «lightssnow…» — снегопад");
+            Eq(3, MetNo.SymbolToWmo(null), "без символа — облачно");
+            Eq(3, MetNo.SymbolToWmo("что-то новое"), "неизвестный символ — облачно");
+        }
+
+        static void MetNoFormulas()
+        {
+            Check(Math.Abs(MetNo.ApparentTemp(7.4, 54.8, 4.5) - 2.1) < 0.1, "+7.4°, 55%, 4.5 м/с → около +2°");
+            Check(MetNo.ApparentTemp(30, 80, 1) > 30, "жара и влажность — ощущается жарче");
+            Check(MetNo.ApparentTemp(-10, 70, 10) < -15, "мороз и ветер — ощущается холоднее");
+            Eq(3 * 3600, MetNo.EstimateUtcOffset(37.6), "Москва по долготе — UTC+3");
+            Eq(-8 * 3600, MetNo.EstimateUtcOffset(-118.24), "Лос-Анджелес по долготе — UTC−8");
+            Check(MetNo.ForecastUrl(new City("Тест", "", 55.755831, 37.617299)).EndsWith("lat=55.7558&lon=37.6173"), "не больше 4 знаков в координатах");
+        }
+
+        static void MetNoParse()
+        {
+            WeatherData d = MetNo.ParseForecast(Cities.Favorites[0], Fixture("metno.json"), 10800);
+            Eq(MetNo.Name, d.Source, "источник");
+            Eq(7.4, d.Temp, "температура");
+            Eq(55, d.Humidity, "влажность округляется");
+            Eq(4.5, d.Wind, "ветер");
+            Check(Math.Abs(d.Feels - 2.1) < 0.1, "ощущается — по формуле Стедмана");
+            Eq(0, d.Code, "clearsky_night → ясно");
+            Eq(false, d.IsDay, "ночь по суффиксу _night");
+            Eq(10800, d.UtcOffset, "часовой пояс берётся извне");
+            Eq(3, d.Days.Count, "3 дня прогноза");
+            if (d.Days.Count == 3)
+            {
+                Eq("Пн, 26", d.Days[0].Label, "день 1");
+                Eq("Вт, 27", d.Days[1].Label, "день 2");
+                Eq("Ср, 28", d.Days[2].Label, "день 3");
+                foreach (DayForecast f in d.Days)
+                    Check(f.Max >= f.Min && f.Max < 40 && f.Min > -40, "разумные max/min: " + f.Label);
+            }
+        }
+
+        static void Cache()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tests", Guid.NewGuid().ToString("N"));
+            WeatherCache cache = new WeatherCache(dir);
+            City c = Cities.Favorites[0];
+            Check(cache.Load(c, TimeSpan.FromDays(3)) == null, "пустой кэш");
+
+            WeatherData d = OpenMeteo.ParseForecast(c, Fixture("forecast.json"));
+            d.FetchedUtc = DateTime.UtcNow.AddHours(-2);
+            cache.Save(d);
+            WeatherData l = cache.Load(c, TimeSpan.FromDays(3));
+            Check(l != null, "загрузка");
+            if (l != null)
+            {
+                Eq(d.Temp, l.Temp, "температура");
+                Eq(d.Feels, l.Feels, "ощущается");
+                Eq(d.Code, l.Code, "код");
+                Eq(d.Sky, l.Sky, "небо");
+                Eq(d.IsDay, l.IsDay, "день/ночь");
+                Eq(d.UtcOffset, l.UtcOffset, "часовой пояс");
+                Eq(OpenMeteo.Name, l.Source, "источник");
+                Check(Math.Abs((l.FetchedUtc - d.FetchedUtc).TotalSeconds) < 1, "время получения");
+                Eq(d.Days.Count, l.Days.Count, "дни прогноза");
+                if (l.Days.Count > 0) Eq("Пн, 26", l.Days[0].Label, "подпись дня");
+                Check(!l.Stale, "сам кэш не помечает данные устаревшими");
+            }
+            Check(cache.Load(c, TimeSpan.FromHours(1)) == null, "старше допустимого — не используется");
+            Check(cache.Load(Cities.Favorites[1], TimeSpan.FromDays(3)) == null, "другой город — свой файл");
+
+            File.WriteAllText(Directory.GetFiles(dir)[0], "мусор\nfetched=вчера\n", Encoding.UTF8);
+            Check(cache.Load(c, TimeSpan.FromDays(3)) == null, "повреждённый файл — null, а не ошибка");
+            Directory.Delete(dir, true);
+        }
+
+        static void ServiceFallback()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tests", Guid.NewGuid().ToString("N"));
+            bool omUp = true, metUp = true;
+            int omCalls = 0, metCalls = 0;
+            string omJson = Fixture("forecast.json"), metJson = Fixture("metno.json");
+            Func<string, string> fakeNet = delegate (string url)
+            {
+                if (url.Contains("open-meteo")) { omCalls++; if (omUp) return omJson; }
+                else if (url.Contains("met.no")) { metCalls++; if (metUp) return metJson; }
+                throw new System.Net.WebException("нет связи");
+            };
+            WeatherService svc = new WeatherService(fakeNet, new WeatherCache(dir), 0);
+            City moscow = Cities.Favorites[0];
+
+            WeatherData d = svc.Get(moscow);
+            Check(d != null && d.Source == OpenMeteo.Name && !d.Stale, "всё работает — Open-Meteo");
+            Eq(0, metCalls, "резерв не трогаем, если основной ответил");
+
+            omUp = false;
+            d = svc.Get(moscow);
+            Check(d != null && d.Source == MetNo.Name && !d.Stale, "Open-Meteo упал — MET Norway");
+            Eq(10800, d != null ? d.UtcOffset : 0, "часовой пояс для MET — последний известный от Open-Meteo");
+            Eq(3, omCalls, "Open-Meteo — повтор при сбое (1 + 2 попытки)");
+
+            metUp = false;
+            d = svc.Get(moscow);
+            Check(d != null && d.Stale, "оба упали — кэш, помеченный как устаревший");
+            Eq(MetNo.Name, d != null ? d.Source : null, "в кэше — последние полученные данные");
+
+            Check(svc.Get(Cities.Favorites[1]) == null, "оба упали и кэша нет — null");
+
+            // новый запуск программы: часовой пояс для MET берётся из кэша Open-Meteo, иначе — оценка по долготе
+            omUp = true;
+            WeatherService first = new WeatherService(fakeNet, new WeatherCache(dir), 0);
+            first.Get(Cities.Favorites[1]);   // в кэше Петербурга — данные Open-Meteo
+            omUp = false; metUp = true;
+            WeatherService restarted = new WeatherService(fakeNet, new WeatherCache(dir), 0);
+            WeatherData spb = restarted.Get(Cities.Favorites[1]);
+            Eq(10800, spb != null ? spb.UtcOffset : 0, "пояс из кэша");
+            WeatherData la = restarted.Get(Cities.World[0]);
+            Eq(-8 * 3600, la != null ? la.UtcOffset : 0, "пояс по долготе, если ничего не известно");
+            Directory.Delete(dir, true);
+        }
+
+        static void AgeAndNotes()
+        {
+            Eq("только что", Format.Age(TimeSpan.FromSeconds(20)), "секунды");
+            Eq("25 мин назад", Format.Age(TimeSpan.FromMinutes(25.7)), "минуты");
+            Eq("3 ч назад", Format.Age(TimeSpan.FromHours(3.9)), "часы");
+            Eq("2 дн. назад", Format.Age(TimeSpan.FromDays(2.5)), "дни");
+
+            WeatherData d = new WeatherData();
+            d.Source = OpenMeteo.Name;
+            Eq("", Advice.SourceNote(d, DateTime.UtcNow), "обычные данные — без приписки");
+            d.Source = MetNo.Name;
+            Check(Advice.SourceNote(d, DateTime.UtcNow).Contains("MET Norway"), "резервный источник указан");
+            d.Stale = true;
+            d.FetchedUtc = DateTime.UtcNow.AddHours(-5);
+            Check(Advice.SourceNote(d, DateTime.UtcNow).Contains("Нет связи — показаны данные 5 ч назад"), "устаревшие данные");
+        }
+
+        // Регрессия: при создании окна кадр уходил в Windows с размером без рамки,
+        // и окно навсегда «ужималось» на 18×29 пикселей. Окно на долю секунды появляется на экране.
+        static void WindowSizeOnStart()
+        {
+            foreach (float scale in new float[] { 1f, 0.654f, 0.8f, 2f })
+            {
+                string path = TempFile();
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, "city=Омск\nscale=" + scale.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+                using (WeatherForm f = new WeatherForm(path))
+                {
+                    f.Show();
+                    System.Windows.Forms.Application.DoEvents();
+                    Size want = new Size((int)Math.Round(240 * scale), (int)Math.Round(356 * scale));
+                    Eq(want, f.ClientSize, "размер окна при масштабе " + scale);
+                    f.Hide();
+                }
+                Directory.Delete(Path.GetDirectoryName(path), true);
+            }
         }
 
         static void SettingsBroken()

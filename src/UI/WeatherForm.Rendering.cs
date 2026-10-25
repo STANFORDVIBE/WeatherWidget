@@ -95,13 +95,16 @@ namespace WeatherWidget
         }
 
         // Нарисовать кадр и показать его.
-        // Размер берётся у самого окна (а не из кэша WinForms): если отдать UpdateLayeredWindow
-        // устаревший размер, Windows изменит под него окно — вероятная причина, по которой раньше сбивалась высота.
+        // UpdateLayeredWindow подгоняет окно под размер кадра, поэтому кадр должен быть ровно
+        // размером с окно: берём размер у самого окна (а не из кэша WinForms) и рисуем только
+        // у показанного окна. Пока окно создаётся, у него на миг есть рамка с заголовком —
+        // если тогда отдать кадр размером с внутреннюю часть, окно навсегда «ужмётся» на размер рамки
+        // (так раньше сбивался размер виджета).
         void Present()
         {
-            if (!IsHandleCreated) return;
+            if (!IsHandleCreated || !Visible) return;
             NativeMethods.RECT rc;
-            if (!NativeMethods.GetClientRect(Handle, out rc)) return;
+            if (!NativeMethods.GetWindowRect(Handle, out rc)) return;
             int w = rc.Right - rc.Left, h = rc.Bottom - rc.Top;
             if (w <= 0 || h <= 0) return;
             scale = w / (float)W;
@@ -192,7 +195,9 @@ namespace WeatherWidget
         void DrawStatusLine(Graphics g, WeatherData d)
         {
             string time = DateTime.UtcNow.AddSeconds(d.UtcOffset).ToString("HH:mm");   // время города, а не компьютера
-            string s = error ?? ((dynamic ? "динамическая погода · " : "местное время ") + time);
+            string s = error ??
+                (d.Stale ? "нет связи · данные " + Format.Age(DateTime.UtcNow - d.FetchedUtc)
+                         : (dynamic ? "динамическая погода · " : "местное время ") + time);
 
             const float bs = 14, gap = 6, cy = 231;   // текст и кнопка вместе — по центру
             StringFormat typo = StringFormat.GenericTypographic;

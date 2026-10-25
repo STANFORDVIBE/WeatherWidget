@@ -15,6 +15,15 @@ namespace WeatherWidget
                 Clothes(d);
         }
 
+        // Приписка к подсказке: резервный источник или устаревшие данные (пусто, если всё обычно)
+        public static string SourceNote(WeatherData d, DateTime nowUtc)
+        {
+            string s = "";
+            if (d.Stale) s += "\n\nНет связи — показаны данные " + Format.Age(nowUtc - d.FetchedUtc) + ".";
+            if (d.Source == MetNo.Name) s += (s == "" ? "\n\n" : "\n") + "Источник: MET Norway (резервный).";
+            return s;
+        }
+
         // Что надеть — по температуре «как ощущается», плюс осадки и ветер
         public static string Clothes(WeatherData d)
         {
@@ -68,6 +77,15 @@ namespace WeatherWidget
         {
             int r = (int)Math.Round(v, MidpointRounding.AwayFromZero);
             return (r > 0 ? "+" : "") + r + "°";
+        }
+
+        // Давность данных: «только что», «25 мин назад», «3 ч назад», «2 дн. назад»
+        public static string Age(TimeSpan t)
+        {
+            if (t.TotalMinutes < 1) return "только что";
+            if (t.TotalHours < 1) return (int)t.TotalMinutes + " мин назад";
+            if (t.TotalDays < 1) return (int)t.TotalHours + " ч назад";
+            return (int)t.TotalDays + " дн. назад";
         }
     }
 }

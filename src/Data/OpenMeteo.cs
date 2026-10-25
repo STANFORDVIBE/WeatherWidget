@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Net;
-using System.Text;
 using System.Web.Script.Serialization;
 
 namespace WeatherWidget
@@ -19,7 +16,7 @@ namespace WeatherWidget
     // Данные распространяются по лицензии CC BY 4.0.
     static class OpenMeteo
     {
-        const int TimeoutMs = 15000;
+        public const string Name = "Open-Meteo";
         static readonly CultureInfo Ru = new CultureInfo("ru-RU");
 
         public static string ForecastUrl(City c)
@@ -36,17 +33,6 @@ namespace WeatherWidget
             return "https://geocoding-api.open-meteo.com/v1/search?count=8&language=ru&format=json&name=" + Uri.EscapeDataString(query);
         }
 
-        public static string Download(string url)
-        {
-            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
-            req.Timeout = TimeoutMs;
-            req.ReadWriteTimeout = TimeoutMs;
-            req.UserAgent = "WeatherWidget/" + Program.Version;
-            using (WebResponse resp = req.GetResponse())
-            using (StreamReader r = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
-                return r.ReadToEnd();
-        }
-
         // Текущая погода и прогноз на 3 дня (начиная с завтрашнего)
         public static WeatherData ParseForecast(City c, string json)
         {
@@ -54,6 +40,7 @@ namespace WeatherWidget
             Dictionary<string, object> cur = (Dictionary<string, object>)root["current"];
             WeatherData d = new WeatherData();
             d.City = c;
+            d.Source = Name;
             d.Temp = Num(cur["temperature_2m"]);
             d.Feels = Num(cur["apparent_temperature"]);
             d.Wind = Num(cur["wind_speed_10m"]);

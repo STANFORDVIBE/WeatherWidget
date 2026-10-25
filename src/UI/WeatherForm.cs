@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
+using System.IO;
+using System.Net.NetworkInformation;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -13,9 +14,10 @@ namespace WeatherWidget
     {
         const int W = 240, H0 = 256, H1 = 356;   // базовый размер (масштаб 100%): свёрнутая карточка / с прогнозом
         const float MinScale = 0.6f, MaxScale = 2.5f;
-        const int RefreshMinutes = 15, DynamicSeconds = 45;
+        const int RefreshMinutes = 15, DynamicSeconds = 45, OfflineRetryMinutes = 2;
 
         readonly string settingsPath;
+        readonly WeatherService weather;
         City home = Cities.Favorites[0];   // город, выбранный пользователем
         City target;                       // город, который сейчас загружается/показывается
         WeatherData data;
@@ -26,6 +28,7 @@ namespace WeatherWidget
 
         readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer dynTimer = new System.Windows.Forms.Timer();
+        readonly System.Windows.Forms.Timer retryTimer = new System.Windows.Forms.Timer();   // повтор, пока нет связи
         readonly ContextMenuStrip menu = new ContextMenuStrip();
         readonly ContextMenuStrip cityPopup = new ContextMenuStrip();   // по клику на название города
         readonly ToolStripMenuItem cityMenu = new ToolStripMenuItem("Город");
@@ -44,6 +47,8 @@ namespace WeatherWidget
         public WeatherForm(string settingsPath)
         {
             this.settingsPath = settingsPath;
+            WeatherCache cache = new WeatherCache(Path.Combine(Path.GetDirectoryName(settingsPath), "cache"));
+            weather = new WeatherService(Http.Download, cache, 1500);
             Text = "Погода";
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
@@ -138,13 +143,29 @@ namespace WeatherWidget
 
             dynTimer.Interval = DynamicSeconds * 1000;
             dynTimer.Tick += delegate { Fetch(rotation.Next()); };
+
+            retryTimer.Interval = OfflineRetryMinutes * 60 * 1000;
+            retryTimer.Tick += delegate { retryTimer.Stop(); Fetch(target); };
+
+            // сеть вернулась — обновить сразу, не дожидаясь таймера
+            NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
+        }
+
+        void OnNetworkChanged(object sender, NetworkAvailabilityEventArgs e)
+        {
+            if (!e.IsAvailable) return;
+            SafeInvoke(delegate { if (data == null || data.Stale || error != null) Fetch(target); });
         }
 
         void ShowAbout()
         {
             MessageBox.Show(
                 "Погода — виджет для рабочего стола\nВерсия " + Program.Version + "\n\n" +
-                "Данные о погоде: Open-Meteo.com (лицензия CC BY 4.0)",
+                "Данные о погоде:\n" +
+                "• Open-Meteo.com — основной источник\n" +
+                "• MET Norway (api.met.no) — резервный источник\n" +
+                "Оба распространяют данные по лицензии CC BY 4.0.\n\n" +
+                "Лицензия программы: MIT",
                 "О программе", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -181,15 +202,15 @@ namespace WeatherWidget
         {
             if (c == null) return;
             target = c;
-            string url = OpenMeteo.ForecastUrl(c);
+            bool showCacheFirst = data == null;   // при запуске сразу показать последние данные, пока идёт загрузка
             ThreadPool.QueueUserWorkItem(delegate
             {
-                WeatherData d = null;
-                for (int attempt = 0; attempt < 3 && d == null; attempt++)   // сеть иногда сбоит — пробуем ещё раз
+                if (showCacheFirst)
                 {
-                    try { d = OpenMeteo.ParseForecast(c, OpenMeteo.Download(url)); }
-                    catch { Thread.Sleep(1500); }
+                    WeatherData old = weather.Cached(c);
+                    if (old != null) SafeInvoke(delegate { if (c == target && data == null) data = old; });
                 }
+                WeatherData d = weather.Get(c);   // Open-Meteo → MET Norway → кэш
                 SafeInvoke(delegate { OnWeather(c, d); });
             });
         }
@@ -204,6 +225,10 @@ namespace WeatherWidget
                 error = null;
             }
             else if (!dynamic) error = "Нет связи с сервером";   // в динамике просто ждём следующий город
+
+            // нет свежих данных — повторить через пару минут (в динамике и так скоро следующий город)
+            retryTimer.Stop();
+            if ((d == null || d.Stale) && !dynamic) retryTimer.Start();
         }
 
         internal void SafeInvoke(MethodInvoker m)

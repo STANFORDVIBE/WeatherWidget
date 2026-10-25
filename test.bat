@@ -7,7 +7,7 @@ call "%~dp0build.bat"
 if errorlevel 1 exit /b 1
 
 "%CSC%" /nologo /target:exe /codepage:65001 /warn:4 ^
-  /r:bin\WeatherWidget.exe /r:System.Drawing.dll ^
+  /r:bin\WeatherWidget.exe /r:System.Drawing.dll /r:System.Windows.Forms.dll ^
   /out:bin\WeatherWidget.Tests.exe /recurse:tests\*.cs
 if errorlevel 1 exit /b 1
 
