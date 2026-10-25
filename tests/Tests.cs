@@ -45,6 +45,7 @@ namespace WeatherWidget.Tests
             Run("Давность данных и приписка к подсказке", AgeAndNotes);
             Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
             Run("Первый запуск: город не выбран", FirstStart);
+            Run("Панель выбора города", Picker);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -484,6 +485,27 @@ namespace WeatherWidget.Tests
             }
             string dir = Path.GetDirectoryName(path);
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+
+        static void Picker()
+        {
+            string path = TempFile();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\n" +
+                "fav=Лондон|Великобритания|51.5085|-0.12574\nfav=Владивосток|Россия|43.10562|131.87354\n", Encoding.UTF8);
+            using (WeatherForm f = new WeatherForm(path))
+            using (CityPicker p = new CityPicker(f))
+            {
+                int own, results, nothing;
+                using (Bitmap b = p.RenderPreview("", null)) own = b.Height;
+                using (Bitmap b = p.RenderPreview("Берлин", OpenMeteo.ParseSearch(Fixture("search.json")))) results = b.Height;
+                using (Bitmap b = p.RenderPreview("Ыыыыы", new List<GeoResult>())) nothing = b.Height;
+                Check(own > results, "свои города (3) — панель выше, чем с 2 результатами поиска (" + own + " > " + results + ")");
+                Check(nothing < results, "«Ничего не найдено» — панель ниже (" + nothing + " < " + results + ")");
+                using (Bitmap b = p.RenderPreview("", null))
+                    Check(b.GetPixel(2, 2).A == 0 && b.GetPixel(b.Width / 2, b.Height / 2).A > 200, "вокруг прозрачно, панель непрозрачная");
+            }
+            Directory.Delete(Path.GetDirectoryName(path), true);
         }
 
         static void SettingsBroken()

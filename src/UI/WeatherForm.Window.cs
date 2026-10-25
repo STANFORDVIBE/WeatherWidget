@@ -139,11 +139,22 @@ namespace WeatherWidget
             SaveSettings();
         }
 
-        // Список городов с поиском — под названием города
+        CityPicker picker;
+        DateTime pickerClosedUtc = DateTime.MinValue;
+
+        // Панель выбора города под названием города; повторный клик по названию её закрывает
         void ShowCityMenu()
         {
             HideTip();
-            cityPopup.Show(this, new Point((int)(20 * scale), (int)(cityRect.Bottom * scale)));
+            if (picker != null) { picker.Close(); return; }
+            // клик по названию сначала закрыл панель (она теряет фокус) — не открывать её снова
+            if ((DateTime.UtcNow - pickerClosedUtc).TotalMilliseconds < 300) return;
+
+            picker = new CityPicker(this);
+            picker.FormClosed += delegate { picker = null; pickerClosedUtc = DateTime.UtcNow; };
+            Point top = PointToScreen(new Point(ClientSize.Width / 2, (int)(cityRect.Top * scale)));
+            Point bottom = PointToScreen(new Point(ClientSize.Width / 2, (int)(cityRect.Bottom * scale)));
+            picker.ShowNear(top.X, top.Y, bottom.Y);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)

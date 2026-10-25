@@ -30,14 +30,11 @@ namespace WeatherWidget
         readonly System.Windows.Forms.Timer dynTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer retryTimer = new System.Windows.Forms.Timer();   // повтор, пока нет связи
         readonly ContextMenuStrip menu = new ContextMenuStrip();
-        readonly ContextMenuStrip cityPopup = new ContextMenuStrip();   // по клику на название города
-        readonly ToolStripMenuItem cityMenu = new ToolStripMenuItem("Город");
         readonly ToolStripMenuItem dynItem = new ToolStripMenuItem("Динамическая погода");
         readonly ToolStripMenuItem topMostItem = new ToolStripMenuItem("Поверх всех окон");
         readonly ToolStripMenuItem autoStartItem = new ToolStripMenuItem("Запускать вместе с Windows");
-        readonly List<CityMenu> cityMenus = new List<CityMenu>();
 
-        // для CityMenu
+        // для панели выбора города (CityPicker)
         internal City Home { get { return home; } }
         internal bool Dynamic { get { return dynamic; } }
         internal CustomCities Custom { get { return custom; } }
@@ -111,11 +108,7 @@ namespace WeatherWidget
 
         void BuildMenus()
         {
-            cityMenus.Add(new CityMenu(this, cityMenu.DropDown));
-            cityMenus.Add(new CityMenu(this, cityPopup));
-            CustomCityItem.KeepOpenOnRemove(menu);   // крестик в подменю не должен закрывать и главное меню
-
-            menu.Items.Add(cityMenu);
+            menu.Items.Add("Выбрать город…", null, delegate { ShowCityMenu(); });
             dynItem.Checked = dynamic;
             dynItem.Click += delegate { SetDynamic(!dynamic); };
             menu.Items.Add(dynItem);
@@ -198,12 +191,6 @@ namespace WeatherWidget
                 ShowCityMenu();
             }
             SaveSettings();
-        }
-
-        internal void CloseMenus()
-        {
-            menu.Close();
-            cityPopup.Close();
         }
 
         // ---------- Данные ----------
