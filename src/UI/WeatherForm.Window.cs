@@ -131,7 +131,7 @@ namespace WeatherWidget
             if (bp.Y > BaseH) return;   // ниже карточки — пусто
             HideTip();
             if (BtnHit(bp)) { ToggleForecast(); return; }
-            if (cityRect.Contains(bp)) { ShowCityMenu(); return; }
+            if (cityHit.Contains(bp)) { ShowCityMenu(); return; }
             if (e.Clicks == 2) { SetDynamic(!dynamic); return; }   // двойной клик — вкл/выкл «динамическую погоду»
 
             NativeMethods.ReleaseCapture();   // перетаскивание окна
@@ -162,11 +162,11 @@ namespace WeatherWidget
             base.OnMouseMove(e);
             Point bp = ToBase(e.Location);
             btnHover = BtnHit(bp);
-            Cursor = cityRect.Contains(bp) || btnHover ? Cursors.Hand : Cursors.Default;
+            Cursor = cityHit.Contains(bp) || btnHover ? Cursors.Hand : Cursors.Default;
 
             TipKind want = TipKind.None;
             if (picker != null) { HideTip(); return; }   // пока открыт выбор города — без подсказок
-            if (data != null && cityRect.Contains(bp)) want = TipKind.City;
+            if (data != null && cityHit.Contains(bp)) want = TipKind.City;
             else if (data != null && tempRect.Contains(bp)) want = TipKind.Temp;
             if (want == tipShown) return;
 

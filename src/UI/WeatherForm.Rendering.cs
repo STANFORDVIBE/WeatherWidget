@@ -42,7 +42,8 @@ namespace WeatherWidget
         };
 
         // области макета 240×H (в базовых координатах)
-        readonly Rectangle cityRect = new Rectangle(16, 8, 208, 26);
+        readonly Rectangle cityRect = new Rectangle(16, 8, 208, 26);   // строка с названием города
+        Rectangle cityHit = Rectangle.Empty;   // сама надпись «Город ▾» — только она кликабельна; считается при отрисовке
         readonly Rectangle tempRect = new Rectangle(40, 138, 160, 56);
         Rectangle btnRect = Rectangle.Empty;   // кнопка прогноза; положение считается при отрисовке (справа от времени)
 
@@ -157,7 +158,10 @@ namespace WeatherWidget
         void DrawContent(Graphics g, WeatherData d, float bh)
         {
             City shown = d != null ? d.City : target;
-            g.DrawString((shown != null ? shown.Name : "Выберите город") + " ▾", fCity, Brushes.White, cityRect, cityFmt);
+            string cityLabel = (shown != null ? shown.Name : "Выберите город") + " ▾";
+            g.DrawString(cityLabel, fCity, Brushes.White, cityRect, cityFmt);
+            float labelW = Math.Min(g.MeasureString(cityLabel, fCity, PointF.Empty, StringFormat.GenericTypographic).Width, cityRect.Width);
+            cityHit = new Rectangle((int)(W / 2f - labelW / 2) - 6, cityRect.Y, (int)labelW + 12, cityRect.Height);   // текст по центру + небольшой запас
 
             if (d == null)
             {
