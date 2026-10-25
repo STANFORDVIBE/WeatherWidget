@@ -6,8 +6,8 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Погода — виджет для рабочего стола")]
 [assembly: AssemblyProduct("WeatherWidget")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 [assembly: InternalsVisibleTo("WeatherWidget.Tests")]
 [assembly: InternalsVisibleTo("WeatherWidget.Tools")]
 
@@ -15,7 +15,7 @@ namespace WeatherWidget
 {
     static class Program
     {
-        public const string Version = "1.2.0";
+        public const string Version = "1.0.0";
 
         [STAThread]
         static void Main()
