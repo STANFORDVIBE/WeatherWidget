@@ -46,6 +46,7 @@ namespace WeatherWidget.Tests
             Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
             Run("Первый запуск: город не выбран", FirstStart);
             Run("Панель выбора города", Picker);
+            Run("Подсказка в стиле виджета", Tooltip);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -506,6 +507,22 @@ namespace WeatherWidget.Tests
                     Check(b.GetPixel(2, 2).A == 0 && b.GetPixel(b.Width / 2, b.Height / 2).A > 200, "вокруг прозрачно, панель непрозрачная");
             }
             Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        static void Tooltip()
+        {
+            using (TipWindow tip = new TipWindow())
+            {
+                int shortW, longW, longH, shortH;
+                using (Bitmap b = tip.RenderPreview("", "Страна: Россия")) { shortW = b.Width; shortH = b.Height; }
+                string longText = "Очень длинная строка подсказки, которая не должна растягивать окно на пол-экрана, а переносится";
+                using (Bitmap b = tip.RenderPreview("Как ощущается", longText)) { longW = b.Width; longH = b.Height; }
+                Check(longW <= 340 + 2 * 12 + 2 * Theme.PanelShadow + 2, "длинный текст переносится, ширина ограничена (" + longW + ")");
+                Check(longH > shortH, "с заголовком и переносом подсказка выше");
+                using (Bitmap b = tip.RenderPreview("", "Страна: Россия"))
+                    Check(b.GetPixel(1, 1).A == 0 && b.GetPixel(b.Width / 2, b.Height / 2).A > 200, "вокруг прозрачно, панель непрозрачная");
+                Check(shortW < longW, "короткая подсказка — узкая");
+            }
         }
 
         static void SettingsBroken()

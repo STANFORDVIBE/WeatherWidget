@@ -1,37 +1,43 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace WeatherWidget
 {
-    // Всплывающая подсказка в стиле системной. Своя, потому что стандартный ToolTip
-    // WinForms не показывается, пока окно виджета не активно (а виджет обычно не активен).
+    // Всплывающая подсказка в стиле виджета: тёмная панель со сглаженными углами и тенью,
+    // бирюзовый заголовок, белый текст. Своя, а не ToolTip: стандартная подсказка WinForms
+    // не показывается, пока окно виджета не активно (а виджет обычно не активен).
+    // Окно никогда не получает фокус и пропускает мышь насквозь.
     sealed class TipWindow : Form
     {
-        const int Pad = 8;
+        const int Shadow = Theme.PanelShadow;
+        const int Pad = 12, Gap = 6, Radius = 12, MaxTextW = 340;
+
+        readonly LayeredSurface surface = new LayeredSurface();
+        readonly Font fTitle = new Font("Segoe UI Semibold", 13, GraphicsUnit.Pixel);
+        readonly Font fBody = new Font("Segoe UI", 12, GraphicsUnit.Pixel);
         string title = "", body = "";
-        readonly Font fTitle = new Font("Segoe UI", 9f, FontStyle.Bold);
-        readonly Font fBody = new Font("Segoe UI", 9f);
+        SizeF titleSize, bodySize;
+        bool shown;
 
         public TipWindow()
         {
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
-            TopMost = true;
-            BackColor = SystemColors.Info;
-            SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
+            AutoScaleMode = AutoScaleMode.None;
         }
 
-        protected override bool ShowWithoutActivation { get { return true; } }   // не забирать фокус
+        protected override bool ShowWithoutActivation { get { return true; } }
 
         protected override CreateParams CreateParams
         {
             get
             {
                 CreateParams cp = base.CreateParams;
-                cp.ExStyle |= NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_TOPMOST | NativeMethods.WS_EX_NOACTIVATE;
-                cp.ClassStyle |= NativeMethods.CS_DROPSHADOW;   // тень, как у системной подсказки
+                cp.ExStyle |= NativeMethods.WS_EX_LAYERED | NativeMethods.WS_EX_TRANSPARENT | NativeMethods.WS_EX_TOOLWINDOW |
+                              NativeMethods.WS_EX_TOPMOST | NativeMethods.WS_EX_NOACTIVATE;
                 return cp;
             }
         }
@@ -44,15 +50,47 @@ namespace WeatherWidget
             base.WndProc(ref m);
         }
 
-        bool shown;
-
-        // Показ и скрытие — напрямую через Windows, а не Form.Show(): WinForms при показе формы
-        // передаёт ей фокус, и открытая панель выбора города теряла его и закрывалась.
-        void ShowNoActivate()
+        protected override void Dispose(bool disposing)
         {
+            if (disposing) { surface.Dispose(); fTitle.Dispose(); fBody.Dispose(); }
+            base.Dispose(disposing);
+        }
+
+        // Размер окна под текст (вместе с полем под тень)
+        Size SetText(string t, string b)
+        {
+            title = t ?? "";
+            body = b ?? "";
+            using (Bitmap tmp = new Bitmap(1, 1))
+            using (Graphics g = Graphics.FromImage(tmp))
+            {
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+                titleSize = title == "" ? SizeF.Empty : g.MeasureString(title, fTitle, MaxTextW);
+                bodySize = g.MeasureString(body, fBody, MaxTextW);   // длинные строки переносятся
+            }
+            int w = (int)Math.Ceiling(Math.Max(titleSize.Width, bodySize.Width)) + 2 * Pad;
+            int h = (int)Math.Ceiling(bodySize.Height + (title == "" ? 0 : titleSize.Height + Gap)) + 2 * Pad;
+            return new Size(w + 2 * Shadow, h + 2 * Shadow);
+        }
+
+        // Показать подсказку так, чтобы её угол был у точки экрана (обычно чуть ниже и правее курсора).
+        // Показ — напрямую через Windows, а не Form.Show(): WinForms при показе передаёт форме фокус,
+        // и открытая панель выбора города теряла его и закрывалась.
+        public void ShowAt(string t, string b, Point at)
+        {
+            Size size = SetText(t, b);
+            int panelW = size.Width - 2 * Shadow, panelH = size.Height - 2 * Shadow;
+
+            // не вылезать за край экрана; не хватает места снизу — показать над курсором
+            Rectangle wa = Screen.FromPoint(at).WorkingArea;
+            int px = Math.Max(wa.Left, Math.Min(at.X, wa.Right - panelW));
+            int py = at.Y + panelH <= wa.Bottom ? at.Y : at.Y - panelH - 30;
+            py = Math.Max(wa.Top, py);
+            Bounds = new Rectangle(px - Shadow, py - Shadow, size.Width, size.Height);
+
+            surface.Present(Handle, Width, Height, 255, Render);
             NativeMethods.SetWindowPos(Handle, NativeMethods.HWND_TOPMOST, Left, Top, Width, Height, NativeMethods.SWP_NOACTIVATE);
             NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
-            Invalidate();
             shown = true;
         }
 
@@ -63,51 +101,31 @@ namespace WeatherWidget
             shown = false;
         }
 
-        Size SetText(string t, string b)
-        {
-            title = t;
-            body = b;
-            Size ts = title == "" ? Size.Empty : TextRenderer.MeasureText(title, fTitle);
-            Size bs = TextRenderer.MeasureText(body, fBody);
-            return new Size(Math.Max(ts.Width, bs.Width) + Pad * 2, bs.Height + Pad * 2 + (title == "" ? 0 : ts.Height + 4));
-        }
-
-        // Картинка подсказки без показа окна — для README
+        // Картинка подсказки без показа окна — для README и тестов
         internal Bitmap RenderPreview(string t, string b)
         {
             Size = SetText(t, b);
-            Bitmap bmp = new Bitmap(Width, Height);
-            DrawToBitmap(bmp, new Rectangle(0, 0, Width, Height));
+            Bitmap bmp = new Bitmap(Width, Height, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(bmp)) Render(g);
             return bmp;
         }
 
-        // Показать подсказку у точки экрана (обычно чуть ниже и правее курсора)
-        public void ShowAt(string t, string b, Point at)
+        void Render(Graphics g)
         {
-            Size size = SetText(t, b);
-            int w = size.Width, h = size.Height;
+            g.Clear(Color.Transparent);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            Theme.DrawPanel(g, new RectangleF(Shadow, Shadow, Width - 2 * Shadow, Height - 2 * Shadow), Radius);
 
-            // не вылезать за край экрана
-            Rectangle wa = Screen.FromPoint(at).WorkingArea;
-            int x = Math.Max(wa.Left, Math.Min(at.X, wa.Right - w));
-            int y = at.Y + h <= wa.Bottom ? at.Y : at.Y - h - 30;
-            y = Math.Max(wa.Top, y);
-            Bounds = new Rectangle(x, y, w, h);
-            ShowNoActivate();
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            Graphics g = e.Graphics;
-            using (Pen p = new Pen(SystemColors.ControlDark))
-                g.DrawRectangle(p, 0, 0, Width - 1, Height - 1);
-            int y = Pad;
+            float x = Shadow + Pad, y = Shadow + Pad;
             if (title != "")
             {
-                TextRenderer.DrawText(g, title, fTitle, new Point(Pad, y), SystemColors.InfoText);
-                y += TextRenderer.MeasureText(title, fTitle).Height + 4;
+                using (SolidBrush accent = new SolidBrush(Theme.Accent))
+                    g.DrawString(title, fTitle, accent, new RectangleF(x, y, MaxTextW, titleSize.Height + 1));
+                y += titleSize.Height + Gap;
             }
-            TextRenderer.DrawText(g, body, fBody, new Point(Pad, y), SystemColors.InfoText);
+            using (SolidBrush text = new SolidBrush(Color.FromArgb(232, 255, 255, 255)))
+                g.DrawString(body, fBody, text, new RectangleF(x, y, MaxTextW, bodySize.Height + 1));
         }
     }
 }

@@ -6,6 +6,28 @@ namespace WeatherWidget
     // Цвета фона и вспомогательная геометрия
     static class Theme
     {
+        // Всплывающие панели (выбор города, подсказки): тёмный фон, бирюзовый акцент
+        public static readonly Color Accent = Color.FromArgb(79, 195, 176);
+        public const int PanelShadow = 14;   // поле вокруг панели под тень
+
+        // Тёмная панель со скруглёнными углами, мягкой тенью и тонкой рамкой
+        public static void DrawPanel(Graphics g, RectangleF panel, float radius)
+        {
+            for (int i = PanelShadow; i >= 1; i -= 2)
+                using (GraphicsPath p = RoundRect(new RectangleF(panel.X - i + 2, panel.Y - i + 5, panel.Width + 2 * i - 4, panel.Height + 2 * i - 4), radius + i))
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(7, 0, 0, 0)))
+                    g.FillPath(b, p);
+
+            using (GraphicsPath p = RoundRect(panel, radius))
+            {
+                using (LinearGradientBrush bg = new LinearGradientBrush(new RectangleF(panel.X, panel.Y - 1, panel.Width, panel.Height + 2),
+                    Color.FromArgb(250, 26, 36, 54), Color.FromArgb(250, 34, 49, 72), 90f))
+                    g.FillPath(bg, p);
+                using (Pen border = new Pen(Color.FromArgb(34, 255, 255, 255)))
+                    g.DrawPath(border, p);
+            }
+        }
+
         // Градиент фона карточки по погоде; ночью темнее
         public static void BgColors(WeatherData d, out Color top, out Color bottom)
         {

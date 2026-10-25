@@ -13,10 +13,9 @@ namespace WeatherWidget
     // стрелки выбирают строку, Enter — выбрать, Esc или клик мимо — закрыть.
     sealed class CityPicker : Form
     {
-        const int Shadow = 14;                 // поле вокруг панели под тень
+        const int Shadow = Theme.PanelShadow;  // поле вокруг панели под тень
         const int PanelW = 280, Pad = 10, SearchH = 38, RowH = 46, StatusH = 58, Radius = 14;
         const int MaxQuery = 60;
-        static readonly Color Accent = Color.FromArgb(79, 195, 176);
 
         sealed class Row
         {
@@ -356,22 +355,7 @@ namespace WeatherWidget
             int panelH = Height - 2 * Shadow;
             RectangleF panel = new RectangleF(Shadow, Shadow, PanelW, panelH);
 
-            // мягкая тень
-            for (int i = Shadow; i >= 1; i -= 2)
-                using (GraphicsPath p = Theme.RoundRect(new RectangleF(panel.X - i + 2, panel.Y - i + 5, panel.Width + 2 * i - 4, panel.Height + 2 * i - 4), Radius + i))
-                using (SolidBrush b = new SolidBrush(Color.FromArgb(7, 0, 0, 0)))
-                    g.FillPath(b, p);
-
-            // панель
-            using (GraphicsPath p = Theme.RoundRect(panel, Radius))
-            {
-                using (LinearGradientBrush bg = new LinearGradientBrush(new RectangleF(panel.X, panel.Y - 1, panel.Width, panel.Height + 2),
-                    Color.FromArgb(250, 26, 36, 54), Color.FromArgb(250, 34, 49, 72), 90f))
-                    g.FillPath(bg, p);
-                using (Pen border = new Pen(Color.FromArgb(34, 255, 255, 255)))
-                    g.DrawPath(border, p);
-            }
-
+            Theme.DrawPanel(g, panel, Radius);
             DrawSearch(g);
 
             float sepY = ListTop - Pad / 2f - 1;
@@ -433,7 +417,7 @@ namespace WeatherWidget
                     g.FillPath(b, p);
 
             if (r.Current)
-                using (SolidBrush dot = new SolidBrush(Accent))
+                using (SolidBrush dot = new SolidBrush(Theme.Accent))
                     g.FillEllipse(dot, rc.X + 10, rc.Y + rc.Height / 2f - 4, 8, 8);
 
             float textX = rc.X + 26, textW = rc.Width - 26 - (r.Removable ? 34 : 8);
