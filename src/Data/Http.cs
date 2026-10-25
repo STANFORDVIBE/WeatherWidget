@@ -6,7 +6,7 @@ namespace WeatherWidget
 {
     static class Http
     {
-        const int TimeoutMs = 15000;
+        const int TimeoutMs = 8000;   // дольше ждать нет смысла: параллельно уже спрашиваем запасной источник
 
         // MET Norway требует, чтобы приложение представлялось в User-Agent
         public static readonly string UserAgent = "WeatherWidget/" + Program.Version + " (desktop weather widget for Windows)";

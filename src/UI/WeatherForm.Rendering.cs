@@ -200,8 +200,9 @@ namespace WeatherWidget
         {
             string time = DateTime.UtcNow.AddSeconds(d.UtcOffset).ToString("HH:mm");   // время города, а не компьютера
             string s = error ??
-                (d.Stale ? "нет связи · данные " + Format.Age(DateTime.UtcNow - d.FetchedUtc)
-                         : (dynamic ? "динамическая погода · " : "местное время ") + time);
+                (d.Stale && loading ? "обновление…"   // показан кэш, свежие данные уже грузятся
+               : d.Stale ? "нет связи · данные " + Format.Age(DateTime.UtcNow - d.FetchedUtc)
+               : (dynamic ? "динамическая погода · " : "местное время ") + time);
 
             const float bs = 14, gap = 6, cy = 231;   // текст и кнопка вместе — по центру
             StringFormat typo = StringFormat.GenericTypographic;

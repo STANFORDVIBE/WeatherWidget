@@ -42,6 +42,7 @@ namespace WeatherWidget.Tests
             Run("MET Norway: разбор прогноза", MetNoParse);
             Run("Кэш погоды", Cache);
             Run("Цепочка источников: Open-Meteo → MET Norway → кэш", ServiceFallback);
+            Run("Медленная сеть: источники наперегонки", SlowNetwork);
             Run("Давность данных и приписка к подсказке", AgeAndNotes);
             Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
             Run("Первый запуск: город не выбран", FirstStart);
@@ -433,6 +434,46 @@ namespace WeatherWidget.Tests
             Eq(10800, spb != null ? spb.UtcOffset : 0, "пояс из кэша");
             WeatherData la = restarted.Get(Cities.World[0]);
             Eq(-8 * 3600, la != null ? la.UtcOffset : 0, "пояс по долготе, если ничего не известно");
+            Directory.Delete(dir, true);
+        }
+
+        // Медленный или зависший сервис не должен задерживать погоду: через metDelay подключается
+        // запасной источник, дольше totalTimeout не ждём (тогда кэш)
+        static void SlowNetwork()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tests", Guid.NewGuid().ToString("N"));
+            string omJson = Fixture("forecast.json"), metJson = Fixture("metno.json");
+            int omDelay = 0, metDelay = 0;
+            bool omUp = true, metUp = true;
+            int metCalls = 0;
+            Func<string, string> net = delegate (string url)
+            {
+                bool om = url.Contains("open-meteo");
+                if (!om) metCalls++;
+                System.Threading.Thread.Sleep(om ? omDelay : metDelay);
+                if (om ? omUp : metUp) return om ? omJson : metJson;
+                throw new System.Net.WebException("нет связи");
+            };
+            WeatherService svc = new WeatherService(net, new WeatherCache(dir), 0, 300, 1500);
+            System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+
+            sw.Restart(); WeatherData d = svc.Get(Moscow);
+            Check(d != null && d.Source == OpenMeteo.Name && sw.ElapsedMilliseconds < 300, "быстрый Open-Meteo — сразу (" + sw.ElapsedMilliseconds + " мс)");
+            Eq(0, metCalls, "запасной не трогаем, если основной ответил быстро");
+
+            omDelay = 3000;   // Open-Meteo «завис»
+            sw.Restart(); d = svc.Get(Moscow);
+            Check(d != null && d.Source == MetNo.Name && sw.ElapsedMilliseconds < 800, "Open-Meteo завис — MET Norway через ~0,3 с (" + sw.ElapsedMilliseconds + " мс)");
+
+            omDelay = 0; omUp = false; metDelay = 200;   // Open-Meteo сразу падает
+            sw.Restart(); d = svc.Get(Moscow);
+            Check(d != null && d.Source == MetNo.Name && sw.ElapsedMilliseconds < 600, "Open-Meteo упал — MET Norway без ожидания (" + sw.ElapsedMilliseconds + " мс)");
+
+            omUp = true; omDelay = 4000; metDelay = 4000;   // оба зависли
+            sw.Restart(); d = svc.Get(Moscow);
+            Check(d != null && d.Stale && sw.ElapsedMilliseconds < 2200, "оба зависли — кэш не позже общего лимита (" + sw.ElapsedMilliseconds + " мс)");
+
+            System.Threading.Thread.Sleep(4500);   // дождаться зависших «запросов», прежде чем удалять папку
             Directory.Delete(dir, true);
         }
 

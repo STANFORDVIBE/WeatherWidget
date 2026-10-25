@@ -21,6 +21,9 @@ namespace WeatherWidget
         static void Main()
         {
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; // TLS 1.2
+            // по умолчанию .NET Framework держит не больше 2 соединений с сервером — остальные запросы
+            // (погода, поиск, запасной источник) стояли бы в очереди за зависшим
+            ServicePointManager.DefaultConnectionLimit = 8;
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new WeatherForm());

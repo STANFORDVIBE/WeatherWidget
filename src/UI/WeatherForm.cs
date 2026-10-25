@@ -22,6 +22,7 @@ namespace WeatherWidget
         City target;                       // город, который сейчас загружается/показывается
         WeatherData data;
         string error;
+        bool loading;                      // идёт загрузка погоды для target
         bool dynamic;
         readonly CustomCities custom;
         readonly CityRotation rotation = new CityRotation(Cities.World, new Random());
@@ -199,29 +200,42 @@ namespace WeatherWidget
         {
             if (c == null) return;
             target = c;
-            bool showCacheFirst = data == null;   // при запуске сразу показать последние данные, пока идёт загрузка
+            loading = true;
+            error = null;
+            // Другой город — показать его сразу: из кэша (если есть) или «Загрузка…»,
+            // а свежие данные подставятся, когда придут. Иначе карточка «застывала» на старом городе.
+            bool switching = data == null || !data.City.Same(c);
             ThreadPool.QueueUserWorkItem(delegate
             {
-                if (showCacheFirst)
+                if (switching)
                 {
                     WeatherData old = weather.Cached(c);
-                    if (old != null) SafeInvoke(delegate { if (c == target && data == null) data = old; });
+                    SafeInvoke(delegate { if (c == target && loading) ShowNow(c, old); });
                 }
-                WeatherData d = weather.Get(c);   // Open-Meteo → MET Norway → кэш
+                WeatherData d = weather.Get(c);   // Open-Meteo и MET Norway наперегонки, иначе кэш
                 SafeInvoke(delegate { OnWeather(c, d); });
             });
+        }
+
+        // Мгновенно показать выбранный город (данные из кэша или пока без данных)
+        void ShowNow(City c, WeatherData cached)
+        {
+            if (data != null && data.City.Same(c)) return;
+            if (data != null) StartCityTransition();
+            data = cached;   // null — карточка покажет название города и «Загрузка…»
         }
 
         void OnWeather(City c, WeatherData d)
         {
             if (c != target) return;   // пока грузилось, выбрали другой город
+            loading = false;
             if (d != null)
             {
                 if (data != null && !data.City.Same(d.City)) StartCityTransition();
                 data = d;
                 error = null;
             }
-            else if (!dynamic) error = "Нет связи с сервером";   // в динамике просто ждём следующий город
+            else if (data == null || !data.City.Same(c)) error = "Нет связи с сервером";   // показать нечего
 
             // нет свежих данных — повторить через пару минут (в динамике и так скоро следующий город)
             retryTimer.Stop();
