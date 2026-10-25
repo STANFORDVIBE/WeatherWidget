@@ -156,10 +156,10 @@ namespace WeatherWidget
         {
             MessageBox.Show(
                 "Погода — виджет для рабочего стола\nВерсия " + Program.Version + "\n\n" +
-                "Данные о погоде:\n" +
-                "• Open-Meteo.com — основной источник\n" +
-                "• MET Norway (api.met.no) — резервный источник\n" +
-                "Оба распространяют данные по лицензии CC BY 4.0.\n\n" +
+                "Данные:\n" +
+                "• Погода — Open-Meteo.com, резерв — MET Norway (api.met.no)\n" +
+                "• Названия городов — GeoNames.org (через поиск Open-Meteo)\n" +
+                "Все данные распространяются по лицензии CC BY 4.0.\n\n" +
                 "Лицензия программы: MIT",
                 "О программе", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
