@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace WeatherWidget
@@ -27,6 +28,11 @@ namespace WeatherWidget
         // Что надеть — по температуре «как ощущается», плюс осадки и ветер
         public static string Clothes(WeatherData d)
         {
+            return Clothes(d, DateTime.UtcNow);
+        }
+
+        public static string Clothes(WeatherData d, DateTime nowUtc)
+        {
             string s;
             if (d.Feels >= 25) s = "Жарко — футболка, шорты и головной убор.";
             else if (d.Feels >= 18) s = "Тепло — можно в футболке.";
@@ -35,10 +41,49 @@ namespace WeatherWidget
             else if (d.Feels >= -5) s = "Холодно — тёплая куртка и шапка.";
             else if (d.Feels >= -15) s = "Мороз — зимняя куртка, шапка, шарф, перчатки.";
             else s = "Сильный мороз — пуховик, термобельё, закройте лицо.";
-            if (d.Sky == Sky.Rain) s += "\nВозьмите зонт или дождевик.";
-            if (d.Sky == Sky.Snow) s += "\nНепромокаемая обувь не помешает.";
+            string precip = PrecipNote(d, nowUtc);
+            if (precip != "") s += "\n" + precip;
             if (d.Wind >= 8) s += "\nСильный ветер — одевайтесь теплее.";
             return s;
+        }
+
+        const int AheadHours = 12;      // на сколько часов вперёд смотреть осадки
+        const int LikelyPrecip = 40;    // с какой вероятности осадки считаются ожидаемыми, %
+
+        // Осадки сейчас и в ближайшие часы — по почасовому прогнозу, а не только по текущему небу:
+        // «С 17:00 дождь (80%) — возьмите зонт.», «Возьмите зонт — дождь до 16:00.». Пусто — если сухо.
+        public static string PrecipNote(WeatherData d, DateTime nowUtc)
+        {
+            List<HourForecast> hours = new List<HourForecast>();
+            foreach (HourForecast h in d.HoursFrom(nowUtc))
+                if (h.Utc < nowUtc.AddHours(AheadHours)) hours.Add(h);
+
+            if (d.Sky == Sky.Snow) return "Непромокаемая обувь не помешает.";
+            if (d.Sky == Sky.Rain)
+            {
+                // идёт дождь — когда закончится (первый сухой час после текущего)
+                foreach (HourForecast h in hours)
+                    if (h.Utc > nowUtc && !Wet(h))
+                        return "Возьмите зонт — дождь до " + d.Local(h.Utc).ToString("HH:mm") + ".";
+                return "Возьмите зонт или дождевик.";
+            }
+
+            // сейчас сухо — будут ли осадки
+            foreach (HourForecast h in hours)
+            {
+                if (!Wet(h)) continue;
+                string what = WeatherCodes.Describe(h.Code).ToLowerInvariant();
+                if (h.Precip >= 0) what += " (" + h.Precip + "%)";
+                string when = h.Utc <= nowUtc ? "Скоро " + what : "С " + d.Local(h.Utc).ToString("HH:mm") + " " + what;
+                return when + (h.Sky == Sky.Snow ? "." : " — возьмите зонт.");
+            }
+            return "";
+        }
+
+        // Осадки в этот час ожидаются: код погоды с осадками и вероятность не ниже порога (если она известна)
+        static bool Wet(HourForecast h)
+        {
+            return (h.Sky == Sky.Rain || h.Sky == Sky.Snow) && (h.Precip < 0 || h.Precip >= LikelyPrecip);
         }
 
         // Ветер простыми словами (по шкале Бофорта)

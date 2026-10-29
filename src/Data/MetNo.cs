@@ -46,6 +46,25 @@ namespace WeatherWidget
             d.IsDay = IsDay(symbol, t0, c.Lon);
             d.UtcOffset = utcOffset;
 
+            // почасовой прогноз на сутки: точки с часовым символом (дальше в ряду MET шаг 6 часов).
+            // Вероятности осадков в компактном ответе нет — Precip остаётся -1.
+            foreach (object o in series)
+            {
+                Dictionary<string, object> e = (Dictionary<string, object>)o;
+                DateTime t;
+                Dictionary<string, object> inst = Instant(e, out t);
+                if (t >= t0.AddHours(OpenMeteo.HoursAhead)) break;
+                string s = Symbol(e, "next_1_hours");
+                if (s == null) continue;
+                HourForecast h = new HourForecast();
+                h.Utc = t;
+                h.Temp = Num(inst["air_temperature"]);
+                h.Code = SymbolToWmo(s);
+                h.Sky = WeatherCodes.ToSky(h.Code);
+                h.IsDay = IsDay(s, t, c.Lon);
+                d.Hours.Add(h);
+            }
+
             // прогноз на 3 дня: по каждому местному дню — max/min температуры и погода около полудня
             DateTime today = t0.AddSeconds(utcOffset).Date;
             for (int k = 1; k <= 3; k++)
@@ -71,6 +90,7 @@ namespace WeatherWidget
                 if (daySymbol == null) continue;   // нет данных на этот день
                 DayForecast f = new DayForecast();
                 f.Label = Ru.DateTimeFormat.GetAbbreviatedDayName(day.DayOfWeek) + ", " + day.Day;
+                f.Date = day;
                 f.Sky = WeatherCodes.ToSky(SymbolToWmo(daySymbol));
                 f.Max = max;
                 f.Min = min;
@@ -132,8 +152,14 @@ namespace WeatherWidget
         // Символ погоды на ближайший период: 1 час, иначе 6, иначе 12 часов
         static string Symbol(Dictionary<string, object> entry)
         {
+            return Symbol(entry, "next_1_hours", "next_6_hours", "next_12_hours");
+        }
+
+        // Символ погоды за первый из указанных периодов, который есть в точке ряда
+        static string Symbol(Dictionary<string, object> entry, params string[] periods)
+        {
             Dictionary<string, object> data = (Dictionary<string, object>)entry["data"];
-            foreach (string period in new string[] { "next_1_hours", "next_6_hours", "next_12_hours" })
+            foreach (string period in periods)
             {
                 object p;
                 if (!data.TryGetValue(period, out p)) continue;

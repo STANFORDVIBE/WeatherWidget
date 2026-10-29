@@ -40,12 +40,13 @@ namespace WeatherWidget
                 lines.Add("isday=" + (d.IsDay ? "1" : "0"));
                 lines.Add("utcoffset=" + d.UtcOffset);
                 foreach (DayForecast f in d.Days)
-                    lines.Add("day=" + f.Label + "|" + f.Sky + "|" + f.Max.ToString(Inv) + "|" + f.Min.ToString(Inv));
+                    lines.Add("day=" + f.Label + "|" + f.Sky + "|" + f.Max.ToString(Inv) + "|" + f.Min.ToString(Inv) +
+                        (f.Date != DateTime.MinValue ? "|" + f.Date.ToString("yyyy-MM-dd", Inv) : ""));
+                foreach (HourForecast h in d.Hours)
+                    lines.Add("hour=" + h.Utc.ToString("o", Inv) + "|" + h.Temp.ToString(Inv) + "|" +
+                        h.Code + "|" + (h.IsDay ? "1" : "0") + "|" + h.Precip);
                 Directory.CreateDirectory(dir);
-                string path = FileFor(d.City), tmp = path + ".tmp";
-                File.WriteAllLines(tmp, lines.ToArray(), new UTF8Encoding(false));   // запись через временный файл —
-                if (File.Exists(path)) File.Delete(path);                               // чтобы не оставить «половинку»
-                File.Move(tmp, path);
+                SafeFile.WriteAllLines(FileFor(d.City), lines.ToArray());
             }
             catch { }
         }
@@ -83,6 +84,10 @@ namespace WeatherWidget
                             DayForecast f = ParseDay(v);
                             if (f != null) d.Days.Add(f);
                             break;
+                        case "hour":
+                            HourForecast h = ParseHour(v);
+                            if (h != null) d.Hours.Add(h);
+                            break;
                     }
                 }
                 if (!hasFetched || !hasTemp) return null;
@@ -93,16 +98,34 @@ namespace WeatherWidget
             catch { return null; }
         }
 
+        // Подпись|небо|max|min[|дата] — дату кэш старых версий не хранил
         static DayForecast ParseDay(string v)
         {
             string[] p = v.Split('|');
             DayForecast f = new DayForecast();
-            if (p.Length != 4 ||
+            if ((p.Length != 4 && p.Length != 5) ||
                 !double.TryParse(p[2], NumberStyles.Float, Inv, out f.Max) ||
                 !double.TryParse(p[3], NumberStyles.Float, Inv, out f.Min)) return null;
+            if (p.Length == 5 && !DateTime.TryParseExact(p[4], "yyyy-MM-dd", Inv, DateTimeStyles.None, out f.Date)) return null;
             try { f.Sky = (Sky)Enum.Parse(typeof(Sky), p[1]); } catch { return null; }
             f.Label = p[0];
             return f;
+        }
+
+        // UTC|температура|код|день|вероятность осадков
+        static HourForecast ParseHour(string v)
+        {
+            string[] p = v.Split('|');
+            HourForecast h = new HourForecast();
+            if (p.Length != 5 ||
+                !DateTime.TryParse(p[0], Inv, DateTimeStyles.RoundtripKind, out h.Utc) ||
+                !double.TryParse(p[1], NumberStyles.Float, Inv, out h.Temp) ||
+                !int.TryParse(p[2], out h.Code) ||
+                !int.TryParse(p[4], out h.Precip)) return null;
+            h.Utc = h.Utc.ToUniversalTime();
+            h.IsDay = p[3] == "1";
+            h.Sky = WeatherCodes.ToSky(h.Code);
+            return h;
         }
     }
 }

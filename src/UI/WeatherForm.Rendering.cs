@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -47,6 +48,7 @@ namespace WeatherWidget
         readonly Font fSmall = new Font("Segoe UI", 11, GraphicsUnit.Pixel);
         readonly Font fDay = new Font("Segoe UI", 12, GraphicsUnit.Pixel);
         readonly Font fDayTemp = new Font("Segoe UI Semibold", 13, GraphicsUnit.Pixel);
+        readonly Font fHourTemp = new Font("Segoe UI Semibold", 12, GraphicsUnit.Pixel);
         readonly StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         readonly StringFormat cityFmt = new StringFormat
         {
@@ -220,23 +222,83 @@ namespace WeatherWidget
             DrawStatusLine(g, d);
             DrawForecastButton(g);
 
-            // прогноз на 3 дня — виден, когда карточка раскрыта
+            // прогноз по часам и на 3 дня — виден, когда карточка раскрыта
             if (exp <= 0) return;
-            const float fy = H0;
-            using (Pen line = new Pen(Color.FromArgb(70, 255, 255, 255), 1))
-                g.DrawLine(line, 20, fy + 2, W - 20, fy + 2);
+            DateTime now = DateTime.UtcNow;
+            DrawHours(g, d, now, H0);
+            DrawDays(g, d, now, H0 + HoursH);
+        }
+
+        const int HourSlots = 6, HourStep = 2;   // 6 точек через 2 часа — полсуток вперёд
+
+        // Почасовой прогноз: время, погода, температура и вероятность осадков (если заметная)
+        void DrawHours(Graphics g, WeatherData d, DateTime now, float fy)
+        {
+            DrawSeparator(g, fy);
+            List<HourForecast> slots = HourSlotsFrom(d.HoursFrom(now), now);
             using (SolidBrush dim = new SolidBrush(Color.FromArgb(215, 255, 255, 255)))
             {
-                for (int i = 0; i < d.Days.Count; i++)
+                if (slots.Count == 0)
                 {
-                    DayForecast day = d.Days[i];
-                    float x = 40 + i * 80;
+                    g.DrawString("почасовой прогноз появится после обновления", fSmall, dim, new RectangleF(0, fy, W, HoursH), center);
+                    return;
+                }
+                using (SolidBrush rain = new SolidBrush(Color.FromArgb(235, 175, 220, 255)))
+                {
+                    const float slotW = W / (float)HourSlots;
+                    for (int i = 0; i < slots.Count; i++)
+                    {
+                        HourForecast h = slots[i];
+                        float x = slotW * (i + 0.5f);
+                        g.DrawString(d.Local(h.Utc).ToString("HH:mm"), fSmall, dim, new RectangleF(x - slotW / 2, fy + 6, slotW, 16), center);
+                        WeatherIcons.Draw(g, h.Sky, !h.IsDay, x, fy + 34, 0.24f, phase);
+                        g.DrawString(Format.Deg(h.Temp), fHourTemp, Brushes.White, new RectangleF(x - slotW / 2, fy + 48, slotW, 18), center);
+                        if (h.Precip >= 20)
+                            g.DrawString(h.Precip + "%", fSmall, rain, new RectangleF(x - slotW / 2, fy + 64, slotW, 15), center);
+                    }
+                }
+            }
+        }
+
+        // Точки для полоски: следующие часы после текущего, не чаще чем через HourStep часов
+        // (у MET Norway шаг ряда бывает больше часа — тогда берём что есть)
+        static List<HourForecast> HourSlotsFrom(List<HourForecast> hours, DateTime now)
+        {
+            List<HourForecast> slots = new List<HourForecast>();
+            DateTime next = now;
+            foreach (HourForecast h in hours)
+            {
+                if (slots.Count == HourSlots) break;
+                if (h.Utc <= now || h.Utc < next) continue;
+                slots.Add(h);
+                next = h.Utc.AddHours(HourStep);
+            }
+            return slots;
+        }
+
+        // Прогноз на 3 дня; прошедшие дни (данные из старого кэша) не показываются
+        void DrawDays(Graphics g, WeatherData d, DateTime now, float fy)
+        {
+            DrawSeparator(g, fy);
+            List<DayForecast> days = d.UpcomingDays(now, 3);
+            using (SolidBrush dim = new SolidBrush(Color.FromArgb(215, 255, 255, 255)))
+            {
+                for (int i = 0; i < days.Count; i++)
+                {
+                    DayForecast day = days[i];
+                    float x = W / 2f + (i - (days.Count - 1) / 2f) * 80;   // по центру, сколько бы дней ни было
                     g.DrawString(day.Label, fDay, dim, new RectangleF(x - 40, fy + 8, 80, 18), center);
                     WeatherIcons.Draw(g, day.Sky, false, x, fy + 44, 0.36f, phase);
                     g.DrawString(Format.Deg(day.Max) + " / " + Format.Deg(day.Min), fDayTemp, Brushes.White,
                         new RectangleF(x - 40, fy + 70, 80, 20), center);
                 }
             }
+        }
+
+        static void DrawSeparator(Graphics g, float y)
+        {
+            using (Pen line = new Pen(Color.FromArgb(70, 255, 255, 255), 1))
+                g.DrawLine(line, 20, y + 2, W - 20, y + 2);
         }
 
         // Строка «местное время 12:30» (или режим/ошибка) и место под кнопку прогноза справа от неё

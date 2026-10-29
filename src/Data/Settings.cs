@@ -104,7 +104,7 @@ namespace WeatherWidget
                 foreach (City c in Custom.Items)
                     lines.Add("fav=" + Clean(c.Name) + "|" + Clean(c.Country) + "|" +
                         c.Lat.ToString(CultureInfo.InvariantCulture) + "|" + c.Lon.ToString(CultureInfo.InvariantCulture));
-                File.WriteAllLines(path, lines.ToArray(), new UTF8Encoding(false));
+                SafeFile.WriteAllLines(path, lines.ToArray());   // сбой при записи не сотрёт город и свои города
                 return true;
             }
             catch { return false; }

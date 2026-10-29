@@ -12,7 +12,8 @@ namespace WeatherWidget
     // Работа с окном и мышью — WeatherForm.Window.cs, отрисовка — WeatherForm.Rendering.cs.
     sealed partial class WeatherForm : Form
     {
-        const int W = 240, H0 = 256, H1 = 356;   // базовый размер (масштаб 100%): свёрнутая карточка / с прогнозом
+        // базовый размер (масштаб 100%): свёрнутая карточка / с прогнозом (по часам + по дням)
+        const int W = 240, H0 = 256, HoursH = 84, DaysH = 100, H1 = H0 + HoursH + DaysH;
         const float MinScale = 0.6f, MaxScale = 2.5f;
         const int RefreshMinutes = 15, DynamicSeconds = 45, OfflineRetryMinutes = 2;
 

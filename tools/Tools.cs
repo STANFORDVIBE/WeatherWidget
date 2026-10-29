@@ -162,16 +162,35 @@ namespace WeatherWidget.Tools
             d.Sky = WeatherCodes.ToSky(code);
             d.IsDay = day;
             d.UtcOffset = utcOffset;
-            string[] labels = { "Пн, 26", "Вт, 27", "Ср, 28" };
+            // даты — от сегодняшнего дня: прошедшие дни виджет не показывает
+            DateTime nowUtc = DateTime.UtcNow;
+            DateTime today = d.Local(nowUtc).Date;
+            System.Globalization.CultureInfo ru = new System.Globalization.CultureInfo("ru-RU");
             int[] codes = { 3, 63, 0 };
             for (int i = 0; i < 3; i++)
             {
                 DayForecast f = new DayForecast();
-                f.Label = labels[i];
+                f.Date = today.AddDays(i + 1);
+                f.Label = ru.DateTimeFormat.GetAbbreviatedDayName(f.Date.DayOfWeek) + ", " + f.Date.Day;
                 f.Sky = WeatherCodes.ToSky(codes[i]);
                 f.Max = temp + 2 - i;
                 f.Min = temp - 5 - i;
                 d.Days.Add(f);
+            }
+            // сутки по часам: днём теплее, через 5–7 часов дождь
+            DateTime hour0 = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, 0, 0, DateTimeKind.Utc);
+            for (int i = 0; i < 24; i++)
+            {
+                HourForecast h = new HourForecast();
+                h.Utc = hour0.AddHours(i);
+                int localHour = d.Local(h.Utc).Hour;
+                h.IsDay = localHour >= 7 && localHour < 18;
+                h.Temp = temp + (h.IsDay ? 1 : -2) - i * 0.15;
+                bool rain = i >= 5 && i <= 7;
+                h.Code = rain ? 61 : i < 3 ? code : 2;
+                h.Precip = rain ? 70 + i : 10;
+                h.Sky = WeatherCodes.ToSky(h.Code);
+                d.Hours.Add(h);
             }
             return d;
         }

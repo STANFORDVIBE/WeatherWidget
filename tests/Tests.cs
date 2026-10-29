@@ -30,6 +30,9 @@ namespace WeatherWidget.Tests
             Run("Совет по одежде", ClothesAdvice);
             Run("Разбор прогноза Open-Meteo", ParseForecast);
             Run("Прогноз без блока daily", ParseForecastWithoutDaily);
+            Run("Пустое поле в ответе Open-Meteo", ParseForecastNullField);
+            Run("Прошедшие дни прогноза не показываются", UpcomingDays);
+            Run("Осадки по почасовому прогнозу", PrecipAdvice);
             Run("Разбор поиска города", ParseSearch);
             Run("Списки городов", CityLists);
             Run("Свои города", CustomCitiesList);
@@ -169,7 +172,94 @@ namespace WeatherWidget.Tests
                 Eq("Ср, 28", d.Days[1].Label, "подпись дня 2");
                 Eq(Sky.Snow, d.Days[1].Sky, "небо дня 2");
                 Eq(-2.4, d.Days[1].Min, "минимум дня 2");
+                Eq(new DateTime(2026, 10, 26), d.Days[0].Date, "дата дня 1");
             }
+
+            // по часам: с текущего часа (18:00 местного) на сутки, час с null пропущен
+            Eq(23, d.Hours.Count, "часов в прогнозе");
+            if (d.Hours.Count == 23)
+            {
+                HourForecast h = d.Hours[0];
+                Eq(new DateTime(2026, 10, 25, 15, 0, 0, DateTimeKind.Utc), h.Utc, "первый час — 18:00 МСК в UTC");
+                Eq(DateTimeKind.Utc, h.Utc.Kind, "время часа — UTC");
+                Eq(61, h.Code, "код часа");
+                Eq(Sky.Rain, h.Sky, "небо часа");
+                Eq(70, h.Precip, "вероятность осадков");
+                Eq(false, h.IsDay, "ночь");
+                Eq(3.4, h.Temp, "температура часа");
+                Check(!d.Hours.Exists(x => x.Utc == new DateTime(2026, 10, 26, 3, 0, 0)), "час без температуры пропущен");
+                HourForecast noProb = d.Hours.Find(x => x.Utc == new DateTime(2026, 10, 26, 6, 0, 0));
+                Eq(-1, noProb != null ? noProb.Precip : -99, "вероятность null — неизвестна");
+            }
+        }
+
+        static void ParseForecastNullField()
+        {
+            string json = Fixture("forecast.json").Replace("\"temperature_2m\":7.4", "\"temperature_2m\":null");
+            bool threw = false;
+            try { OpenMeteo.ParseForecast(Moscow, json); }
+            catch (FormatException) { threw = true; }
+            Check(threw, "пустая температура — ошибка ответа (дальше запасной источник), а не «0°»");
+        }
+
+        static void UpcomingDays()
+        {
+            WeatherData d = OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"));   // дни 26 и 28 октября, МСК
+            Eq(2, d.UpcomingDays(new DateTime(2026, 10, 25, 15, 30, 0, DateTimeKind.Utc), 3).Count, "25-го видны оба дня");
+            List<DayForecast> later = d.UpcomingDays(new DateTime(2026, 10, 26, 22, 0, 0, DateTimeKind.Utc), 3);
+            Eq(1, later.Count, "в 01:00 27-го по Москве — только 28-е");
+            if (later.Count == 1) Eq("Ср, 28", later[0].Label, "оставшийся день");
+            Eq(0, d.UpcomingDays(new DateTime(2026, 10, 28, 21, 30, 0, DateTimeKind.Utc), 3).Count, "все дни прошли");
+            Eq(1, d.UpcomingDays(new DateTime(2026, 10, 25, 15, 30, 0, DateTimeKind.Utc), 1).Count, "не больше max");
+            d.Days.Add(new DayForecast { Label = "Чт, 29" });
+            Eq(1, d.UpcomingDays(new DateTime(2026, 10, 28, 21, 30, 0, DateTimeKind.Utc), 3).Count, "день без даты (старый кэш) показывается");
+        }
+
+        // Погода с почасовым прогнозом: МСК, сейчас 18:30 (15:30 UTC), часы с 18:00 местного
+        static readonly DateTime Now1830 = new DateTime(2026, 10, 25, 15, 30, 0, DateTimeKind.Utc);
+
+        static WeatherData WithHours(Sky now, int hours, params int[] wet)   // wet: номер часа, код, вероятность, …
+        {
+            WeatherData d = new WeatherData();
+            d.Feels = 10;
+            d.Sky = now;
+            d.UtcOffset = 10800;
+            for (int i = 0; i < hours; i++)
+            {
+                HourForecast h = new HourForecast();
+                h.Utc = new DateTime(2026, 10, 25, 15, 0, 0, DateTimeKind.Utc).AddHours(i);
+                h.Code = 2;
+                h.Precip = 10;
+                for (int k = 0; k + 2 < wet.Length; k += 3)
+                    if (wet[k] == i) { h.Code = wet[k + 1]; h.Precip = wet[k + 2]; }
+                h.Sky = WeatherCodes.ToSky(h.Code);
+                d.Hours.Add(h);
+            }
+            return d;
+        }
+
+        static void PrecipAdvice()
+        {
+            Eq("С 21:00 дождь (80%) — возьмите зонт.", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 61, 80), Now1830), "сухо, дождь через 3 часа");
+            WeatherData unlikely = WithHours(Sky.Cloudy, 16, 3, 61, 30);
+            Eq("", Advice.PrecipNote(unlikely, Now1830), "дождь с вероятностью 30% — не пугаем");
+            Check(!Advice.Clothes(unlikely, Now1830).Contains("зонт"), "и в совете по одежде зонта нет");
+            Eq("С 21:00 снег (60%).", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 73, 60), Now1830), "снег — без зонта");
+            Eq("С 21:00 ливень — возьмите зонт.", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 80, -1), Now1830), "вероятность неизвестна (MET Norway)");
+            Eq("Скоро дождь (70%) — возьмите зонт.", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 0, 61, 70), Now1830), "дождь уже в текущем часе");
+            Eq("", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 13, 61, 90), Now1830), "дальше 12 часов не смотрим");
+            Eq("Возьмите зонт — дождь до 20:00.", Advice.PrecipNote(WithHours(Sky.Rain, 16, 0, 61, 90, 1, 61, 90), Now1830), "идёт дождь — до какого часа");
+            Eq("Возьмите зонт или дождевик.", Advice.PrecipNote(WithHours(Sky.Rain, 16, 0, 61, 90, 1, 61, 90, 2, 61, 90, 3, 61, 90, 4, 61, 90,
+                5, 61, 90, 6, 61, 90, 7, 61, 90, 8, 61, 90, 9, 61, 90, 10, 61, 90, 11, 61, 90, 12, 61, 90), Now1830), "дождь не кончится");
+            Eq("Непромокаемая обувь не помешает.", Advice.PrecipNote(WithHours(Sky.Snow, 16), Now1830), "идёт снег");
+
+            // прогноз устарел (кэш двухдневной давности) — только по текущему небу
+            DateTime later = Now1830.AddDays(2);
+            Eq("Возьмите зонт или дождевик.", Advice.PrecipNote(WithHours(Sky.Rain, 16, 0, 61, 90), later), "старый прогноз, идёт дождь");
+            Eq("", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 61, 90), later), "старый прогноз не пугает дождём");
+
+            WeatherData real = OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"));
+            Eq("Возьмите зонт — дождь до 20:00.", Advice.PrecipNote(real, Now1830), "по ответу Open-Meteo");
         }
 
         static void ParseForecastWithoutDaily()
@@ -348,6 +438,14 @@ namespace WeatherWidget.Tests
             Eq(0, d.Code, "clearsky_night → ясно");
             Eq(false, d.IsDay, "ночь по суффиксу _night");
             Eq(10800, d.UtcOffset, "часовой пояс берётся извне");
+            Eq(9, d.Hours.Count, "часы — точки с часовым символом в пределах суток");
+            if (d.Hours.Count > 0)
+            {
+                Eq(new DateTime(2026, 10, 25, 16, 0, 0), d.Hours[0].Utc, "первый час");
+                Eq(-1, d.Hours[0].Precip, "вероятность осадков неизвестна");
+                Eq(false, d.Hours[0].IsDay, "ночь");
+            }
+            Eq(new DateTime(2026, 10, 26), d.Days.Count > 0 ? d.Days[0].Date : DateTime.MinValue, "дата дня");
             Eq(3, d.Days.Count, "3 дня прогноза");
             if (d.Days.Count == 3)
             {
@@ -383,10 +481,30 @@ namespace WeatherWidget.Tests
                 Check(Math.Abs((l.FetchedUtc - d.FetchedUtc).TotalSeconds) < 1, "время получения");
                 Eq(d.Days.Count, l.Days.Count, "дни прогноза");
                 if (l.Days.Count > 0) Eq("Пн, 26", l.Days[0].Label, "подпись дня");
+                if (l.Days.Count > 0) Eq(new DateTime(2026, 10, 26), l.Days[0].Date, "дата дня");
+                Eq(d.Hours.Count, l.Hours.Count, "часы прогноза");
+                if (l.Hours.Count > 0)
+                {
+                    Eq(d.Hours[0].Utc, l.Hours[0].Utc, "время часа");
+                    Eq(DateTimeKind.Utc, l.Hours[0].Utc.Kind, "время часа — UTC");
+                    Eq(d.Hours[0].Temp, l.Hours[0].Temp, "температура часа");
+                    Eq(d.Hours[0].Precip, l.Hours[0].Precip, "вероятность осадков");
+                    Eq(d.Hours[0].Sky, l.Hours[0].Sky, "небо часа");
+                    Eq(d.Hours[0].IsDay, l.Hours[0].IsDay, "день/ночь часа");
+                }
                 Check(!l.Stale, "сам кэш не помечает данные устаревшими");
             }
+            Check(Directory.GetFiles(dir, "*.tmp").Length == 0, "временный файл не остаётся");
+            cache.Save(d);
+            Check(cache.Load(c, TimeSpan.FromDays(3)) != null, "перезапись поверх старого файла");
             Check(cache.Load(c, TimeSpan.FromHours(1)) == null, "старше допустимого — не используется");
             Check(cache.Load(Spb, TimeSpan.FromDays(3)) == null, "другой город — свой файл");
+
+            // кэш прошлой версии: дни без даты, без часов
+            File.WriteAllText(Directory.GetFiles(dir)[0], "fetched=" + DateTime.UtcNow.ToString("o") + "\ntemp=5\ncode=3\nday=Пн, 26|Cloudy|8|3\n", Encoding.UTF8);
+            WeatherData legacy = cache.Load(c, TimeSpan.FromDays(3));
+            Check(legacy != null && legacy.Days.Count == 1 && legacy.Days[0].Date == DateTime.MinValue && legacy.Hours.Count == 0,
+                "кэш прошлой версии читается: день без даты, без часов");
 
             File.WriteAllText(Directory.GetFiles(dir)[0], "мусор\nfetched=вчера\n", Encoding.UTF8);
             Check(cache.Load(c, TimeSpan.FromDays(3)) == null, "повреждённый файл — null, а не ошибка");
@@ -508,7 +626,7 @@ namespace WeatherWidget.Tests
                 {
                     f.Show();
                     System.Windows.Forms.Application.DoEvents();
-                    Size want = new Size((int)Math.Round(240 * scale), (int)Math.Round(356 * scale));
+                    Size want = new Size((int)Math.Round(240 * scale), (int)Math.Round(440 * scale));
                     Eq(want, f.ClientSize, "размер окна при масштабе " + scale);
                     f.Hide();
                 }

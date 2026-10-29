@@ -24,6 +24,7 @@ namespace WeatherWidget
             return "https://api.open-meteo.com/v1/forecast?latitude=" + c.Lat.ToString(CultureInfo.InvariantCulture) +
                 "&longitude=" + c.Lon.ToString(CultureInfo.InvariantCulture) +
                 "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" +
+                "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=4" +
                 "&wind_speed_unit=ms&timezone=auto";
         }
@@ -33,7 +34,7 @@ namespace WeatherWidget
             return "https://geocoding-api.open-meteo.com/v1/search?count=8&language=ru&format=json&name=" + Uri.EscapeDataString(query);
         }
 
-        // Текущая погода и прогноз на 3 дня (начиная с завтрашнего)
+        // Текущая погода, почасовой прогноз на сутки и прогноз на 3 дня (начиная с завтрашнего)
         public static WeatherData ParseForecast(City c, string json)
         {
             Dictionary<string, object> root = (Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject(json);
@@ -41,14 +42,17 @@ namespace WeatherWidget
             WeatherData d = new WeatherData();
             d.City = c;
             d.Source = Name;
-            d.Temp = Num(cur["temperature_2m"]);
-            d.Feels = Num(cur["apparent_temperature"]);
-            d.Wind = Num(cur["wind_speed_10m"]);
-            d.Humidity = (int)Num(cur["relative_humidity_2m"]);
-            d.Code = (int)Num(cur["weather_code"]);
-            d.IsDay = Num(cur["is_day"]) != 0;
+            d.Temp = Required(cur, "temperature_2m");
+            d.Feels = Required(cur, "apparent_temperature");
+            d.Wind = Required(cur, "wind_speed_10m");
+            d.Humidity = (int)Required(cur, "relative_humidity_2m");
+            d.Code = (int)Required(cur, "weather_code");
+            d.IsDay = Required(cur, "is_day") != 0;
             d.Sky = WeatherCodes.ToSky(d.Code);
             d.UtcOffset = root.ContainsKey("utc_offset_seconds") ? (int)Num(root["utc_offset_seconds"]) : 0;
+
+            try { ParseHours(d, root, cur); }
+            catch { d.Hours.Clear(); }   // без почасового прогноза виджет всё равно работает
 
             try
             {
@@ -63,6 +67,7 @@ namespace WeatherWidget
                     DateTime dt = DateTime.ParseExact((string)time[i], "yyyy-MM-dd", CultureInfo.InvariantCulture);
                     DayForecast f = new DayForecast();
                     f.Label = Ru.DateTimeFormat.GetAbbreviatedDayName(dt.DayOfWeek) + ", " + dt.Day;
+                    f.Date = dt;
                     f.Sky = WeatherCodes.ToSky((int)Num(codes[i]));
                     f.Max = Num(max[i]);
                     f.Min = Num(min[i]);
@@ -71,6 +76,51 @@ namespace WeatherWidget
             }
             catch { }   // без прогноза виджет всё равно показывает текущую погоду
             return d;
+        }
+
+        public const int HoursAhead = 24;   // сколько часов прогноза хранить
+
+        // Почасовой прогноз от текущего часа на сутки вперёд. Время в ответе — местное (timezone=auto).
+        static void ParseHours(WeatherData d, Dictionary<string, object> root, Dictionary<string, object> cur)
+        {
+            if (!root.ContainsKey("hourly")) return;
+            Dictionary<string, object> hourly = (Dictionary<string, object>)root["hourly"];
+            object[] time = (object[])hourly["time"];
+            object[] temp = (object[])hourly["temperature_2m"];
+            object[] codes = (object[])hourly["weather_code"];
+            object[] prob = (object[])hourly["precipitation_probability"];
+            object[] isDay = (object[])hourly["is_day"];
+            DateTime now = LocalTime((string)cur["time"]);
+            DateTime from = now.Date.AddHours(now.Hour);
+            for (int i = 0; i < time.Length; i++)
+            {
+                DateTime local = LocalTime((string)time[i]);
+                if (local < from) continue;
+                if (local >= from.AddHours(HoursAhead)) break;
+                if (temp[i] == null || codes[i] == null) continue;
+                HourForecast h = new HourForecast();
+                h.Utc = DateTime.SpecifyKind(local.AddSeconds(-d.UtcOffset), DateTimeKind.Utc);
+                h.Temp = Num(temp[i]);
+                h.Code = (int)Num(codes[i]);
+                h.Sky = WeatherCodes.ToSky(h.Code);
+                h.IsDay = isDay[i] == null ? d.IsDay : Num(isDay[i]) != 0;
+                if (prob[i] != null) h.Precip = (int)Num(prob[i]);
+                d.Hours.Add(h);
+            }
+        }
+
+        static DateTime LocalTime(string s)
+        {
+            return DateTime.ParseExact(s, "yyyy-MM-dd'T'HH:mm", CultureInfo.InvariantCulture);
+        }
+
+        // Обязательное поле текущей погоды: пустое значение — ошибка ответа, а не «0°»
+        // (иначе виджет показал бы ноль вместо того, чтобы спросить запасной источник)
+        static double Required(Dictionary<string, object> d, string key)
+        {
+            object v;
+            if (!d.TryGetValue(key, out v) || v == null) throw new FormatException("Open-Meteo: нет поля " + key);
+            return Num(v);
         }
 
         // Результаты поиска города
