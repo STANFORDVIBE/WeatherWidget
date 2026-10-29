@@ -19,10 +19,31 @@ namespace WeatherWidget
             req.UserAgent = UserAgent;
             // только gzip: «deflate» серверы присылают в обёртке zlib, а .NET Framework ждёт «сырой» deflate и падает
             req.AutomaticDecompression = DecompressionMethods.GZip;
-            using (WebResponse resp = req.GetResponse())
-            using (StreamReader r = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
-                return r.ReadToEnd();
+            try
+            {
+                using (WebResponse resp = req.GetResponse())
+                using (StreamReader r = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                    return r.ReadToEnd();
+            }
+            catch (WebException e)
+            {
+                if (e.Response == null) throw;
+                // ответ с ошибкой (429, 500…) нужно закрыть, иначе он держит соединение;
+                // а его текст («Too many requests…») — в сообщение, чтобы причина попала в журнал
+                string body = "";
+                try
+                {
+                    using (WebResponse resp = e.Response)
+                    using (StreamReader r = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                        body = r.ReadToEnd().Trim();
+                }
+                catch { }
+                if (body.Length > MaxErrorBody) body = body.Substring(0, MaxErrorBody) + "…";
+                throw new WebException(body == "" ? e.Message : e.Message + " " + body, e, e.Status, null);
+            }
         }
+
+        const int MaxErrorBody = 200;
 
         // Файл целиком (архив обновления): ждём дольше, переадресацию GitHub на хранилище проходим сами
         public static byte[] DownloadBytes(string url)

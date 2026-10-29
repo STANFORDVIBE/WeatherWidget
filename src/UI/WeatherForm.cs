@@ -2,23 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
-using System.Net.NetworkInformation;
 using System.Threading;
 using System.Windows.Forms;
-using Microsoft.Win32;
 
 namespace WeatherWidget
 {
-    // Окно виджета: состояние, меню, таймеры и загрузка погоды.
-    // Работа с окном и мышью — WeatherForm.Window.cs, отрисовка — WeatherForm.Rendering.cs.
+    // Окно виджета: состояние, меню и загрузка погоды.
+    // Работа с окном и мышью — WeatherForm.Window.cs, отрисовка — WeatherForm.Rendering.cs,
+    // когда обновлять погоду — RefreshSchedule, новые версии — AppUpdater.
     sealed partial class WeatherForm : Form
     {
         // базовый размер (масштаб 100%): свёрнутая карточка / с прогнозом (по часам + по дням)
         const int W = 240, H0 = 256, HoursH = 84, DaysH = 100, H1 = H0 + HoursH + DaysH;
         const float MinScale = 0.6f, MaxScale = 2.5f;
-        const int RefreshMinutes = 15, DynamicSeconds = 45, OfflineRetryMinutes = 2;
 
         readonly string settingsPath;
+        readonly string logPath;           // error.log рядом с настройками
         readonly WeatherService weather;
         City home;                         // город, выбранный пользователем (null — ещё не выбран)
         City target;                       // город, который сейчас загружается/показывается
@@ -31,12 +30,8 @@ namespace WeatherWidget
         string lang;                       // выбранный в меню язык; null — как в Windows
         string units;                      // выбранные в меню единицы; null — как принято в стране из настроек Windows
 
-        readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
-        readonly System.Windows.Forms.Timer dynTimer = new System.Windows.Forms.Timer();
-        readonly System.Windows.Forms.Timer retryTimer = new System.Windows.Forms.Timer();   // повтор, пока нет связи
-        readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer();  // новая версия на GitHub
-        UpdateInfo update;                 // вышла новая версия; null — нет или ещё не проверяли
-        bool installing;                   // идёт загрузка обновления
+        RefreshSchedule schedule;
+        AppUpdater updater;
         // меню пересобирается при смене языка
         ContextMenuStrip menu, trayMenu;
         ToolStripMenuItem dynItem, topMostItem, autoStartItem;
@@ -52,8 +47,10 @@ namespace WeatherWidget
         public WeatherForm(string settingsPath)
         {
             this.settingsPath = settingsPath;
+            logPath = Path.Combine(Path.GetDirectoryName(settingsPath), "error.log");
             WeatherCache cache = new WeatherCache(Path.Combine(Path.GetDirectoryName(settingsPath), "cache"));
             weather = new WeatherService(Http.Download, cache, 1500);
+            weather.Failed = delegate(string message) { ErrorLog.Note(logPath, message, DateTime.Now); };
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
@@ -70,13 +67,15 @@ namespace WeatherWidget
             Text = L.T("Погода", "Weather");
             rotation = new CityRotation(Cities.World, new Random());
 
+            StartAnimation();
+            schedule = new RefreshSchedule(SafeInvoke, delegate { Fetch(target); }, delegate { Fetch(rotation.Next()); }, OnNetworkBack);
+            updater = new AppUpdater(SafeInvoke, BuildMenus, RestartUpdated, logPath);
             BuildMenus();
-            StartTimers();
 
             FormClosing += delegate { SaveSettings(); };
             Load += delegate
             {
-                if (dynamic) { rotation.Restart(); dynTimer.Start(); Fetch(rotation.Next()); }
+                if (dynamic) { rotation.Restart(); schedule.StartDynamic(); Fetch(rotation.Next()); }
                 else Fetch(home);
                 TranslateCities();   // язык сменили, когда не было связи, — перевести сейчас
             };
@@ -141,20 +140,20 @@ namespace WeatherWidget
         {
             ContextMenuStrip old = menu;
             menu = new ContextMenuStrip();
-            if (update != null)
+            if (updater.Available != null)
             {
-                UpdateInfo u = update;
+                UpdateInfo u = updater.Available;
                 ToolStripMenuItem upd;
-                if (installing)
+                if (updater.Installing)
                 {
                     upd = new ToolStripMenuItem(L.T("Загрузка обновления…", "Downloading the update…"));
                     upd.Enabled = false;
                 }
                 else if (u.CanInstall)
-                    upd = new ToolStripMenuItem(L.T("Обновить до версии ", "Update to version ") + u.Version, null, delegate { InstallUpdate(u); });
+                    upd = new ToolStripMenuItem(L.T("Обновить до версии ", "Update to version ") + u.Version, null, delegate { updater.Install(u); });
                 else   // в релизе нечем проверить архив — только открыть страницу
                     upd = new ToolStripMenuItem(L.T("Доступна версия ", "Version ") + u.Version +
-                        L.T(" — скачать…", " is available — download…"), null, delegate { OpenUrl(u.Url); });
+                        L.T(" — скачать…", " is available — download…"), null, delegate { AppUpdater.OpenUrl(u.Url); });
                 upd.Font = new Font(upd.Font, FontStyle.Bold);
                 menu.Items.Add(upd);
                 menu.Items.Add(new ToolStripSeparator());
@@ -193,7 +192,7 @@ namespace WeatherWidget
             unitsItem.DropDownItems.Add(imperial);
             menu.Items.Add(unitsItem);
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(L.T("Проверить обновления", "Check for updates"), null, delegate { CheckUpdates(true); });
+            menu.Items.Add(L.T("Проверить обновления", "Check for updates"), null, delegate { updater.Check(true); });
             menu.Items.Add(L.T("О программе", "About"), null, delegate { ShowAbout(); });
             menu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
             MenuRenderer.Apply(menu);
@@ -250,7 +249,7 @@ namespace WeatherWidget
             // меню пересобираем после того, как закроется текущее (клик пришёл из него)
             SafeInvoke(delegate { BuildMenus(); });
             rotation = new CityRotation(Cities.World, new Random());
-            if (dynamic) { rotation.Restart(); dynTimer.Stop(); dynTimer.Start(); Fetch(rotation.Next()); }
+            if (dynamic) { rotation.Restart(); schedule.StartDynamic(); Fetch(rotation.Next()); }
             else if (target != null) { error = null; Fetch(target); }   // описание погоды и ошибки — на новом языке
             TranslateCities();
         }
@@ -312,115 +311,26 @@ namespace WeatherWidget
             if (refetch) Fetch(target);
         }
 
-        void StartTimers()
+        void StartAnimation()
         {
             animTimer.Interval = 40;
             animTimer.Tick += delegate { Animate(); };
             animTimer.Start();
-
-            refreshTimer.Interval = RefreshMinutes * 60 * 1000;
-            refreshTimer.Tick += delegate { Fetch(target); };
-            refreshTimer.Start();
-
-            dynTimer.Interval = DynamicSeconds * 1000;
-            dynTimer.Tick += delegate { Fetch(rotation.Next()); };
-
-            retryTimer.Interval = OfflineRetryMinutes * 60 * 1000;
-            retryTimer.Tick += delegate { retryTimer.Stop(); Fetch(target); };
-
-            // новая версия: через минуту после запуска (не мешать загрузке погоды), дальше раз в сутки
-            updateTimer.Interval = 60 * 1000;
-            updateTimer.Tick += delegate { updateTimer.Interval = 24 * 60 * 60 * 1000; CheckUpdates(false); };
-            updateTimer.Start();
-
-            // сеть вернулась — обновить сразу, не дожидаясь таймера
-            NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
-            // компьютер проснулся — погода могла устареть на время сна
-            SystemEvents.PowerModeChanged += OnPowerModeChanged;
         }
 
-        void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        // Сеть вернулась: без свежих данных — обновить сразу, не дожидаясь таймера
+        void OnNetworkBack()
         {
-            if (e.Mode != PowerModes.Resume) return;
-            // сеть после сна поднимается не сразу: не вышло — повторит retryTimer или OnNetworkChanged
-            SafeInvoke(delegate { refreshTimer.Stop(); refreshTimer.Start(); Fetch(target); });
+            if (data == null || data.Stale || error != null) Fetch(target);
+            TranslateCities();
         }
 
-        void OnNetworkChanged(object sender, NetworkAvailabilityEventArgs e)
+        // Новая версия установлена — сохранить настройки и уступить место ей
+        void RestartUpdated()
         {
-            if (!e.IsAvailable) return;
-            SafeInvoke(delegate
-            {
-                if (data == null || data.Stale || error != null) Fetch(target);
-                TranslateCities();
-            });
-        }
-
-        // manual — из меню: сказать и когда новой версии нет, и когда проверить не удалось
-        void CheckUpdates(bool manual)
-        {
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                string json = null;
-                try { json = Http.Download(Updates.LatestUrl(Updates.Repo)); } catch { }
-                UpdateInfo u = null;
-                try { if (json != null) u = Updates.Newer(json, Program.Version); } catch { }
-                SafeInvoke(delegate
-                {
-                    if (u != null) ShowUpdate(u);
-                    if (!manual) return;
-                    if (u != null) { if (u.CanInstall && !installing) AskInstall(u); else if (!u.CanInstall) OpenUrl(u.Url); }
-                    else if (json == null)
-                        MessageBox.Show(L.T("Не удалось проверить обновления — нет связи с GitHub.", "Couldn't check for updates — GitHub is unreachable."),
-                            L.T("Обновления", "Updates"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    else
-                        MessageBox.Show(L.T("У вас последняя версия: ", "You have the latest version: ") + Program.Version,
-                            L.T("Обновления", "Updates"), MessageBoxButtons.OK, MessageBoxIcon.Information);
-                });
-            });
-        }
-
-        void AskInstall(UpdateInfo u)
-        {
-            if (MessageBox.Show(L.T("Вышла версия ", "Version ") + u.Version + L.T(". Обновить сейчас? Виджет перезапустится.", " is out. Update now? The widget will restart."),
-                    L.T("Обновления", "Updates"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
-                InstallUpdate(u);
-        }
-
-        // Скачать, проверить и подменить exe, затем перезапуститься новой версией
-        void InstallUpdate(UpdateInfo u)
-        {
-            if (installing) return;
-            installing = true;
-            SafeInvoke(delegate { BuildMenus(); });   // «Загрузка обновления…»
-            string exe = Application.ExecutablePath;
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                Exception fail = null;
-                try
-                {
-                    byte[] zip = Http.DownloadBytes(u.ZipUrl);
-                    string sha = Http.Download(u.ShaUrl);
-                    Updates.Install(exe, Updates.ExtractExe(zip, sha), u.Version);
-                }
-                catch (Exception e) { fail = e; }
-                SafeInvoke(delegate
-                {
-                    installing = false;
-                    if (fail == null)
-                    {
-                        SaveSettings();
-                        try { Program.RestartUpdated(); Close(); return; }
-                        catch (Exception e) { fail = e; }
-                    }
-                    ErrorLog.Write(ErrorLog.DefaultPath, fail, DateTime.Now);
-                    BuildMenus();
-                    if (MessageBox.Show(L.T("Не удалось обновиться: ", "Couldn't update: ") + fail.Message +
-                            L.T("\n\nОткрыть страницу релиза, чтобы скачать вручную?", "\n\nOpen the release page to download it manually?"),
-                            L.T("Обновления", "Updates"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
-                        OpenUrl(u.Url);
-                });
-            });
+            SaveSettings();
+            Program.RestartUpdated();
+            Close();
         }
 
         // Первый запуск после обновления — сообщить у значка в трее
@@ -432,17 +342,7 @@ namespace WeatherWidget
         }
 
         // Пункт «Доступна версия …» первым в меню
-        internal void ShowUpdate(UpdateInfo u)
-        {
-            if (update != null && update.Version == u.Version) return;
-            update = u;
-            BuildMenus();
-        }
-
-        static void OpenUrl(string url)
-        {
-            try { System.Diagnostics.Process.Start(url); } catch { }
-        }
+        internal void ShowUpdate(UpdateInfo u) { updater.Show(u); }
 
         void ShowAbout()
         {
@@ -468,7 +368,7 @@ namespace WeatherWidget
         {
             custom.Remember(c);
             home = c;
-            if (dynamic) { dynamic = false; dynItem.Checked = false; dynTimer.Stop(); }
+            if (dynamic) { dynamic = false; dynItem.Checked = false; schedule.StopDynamic(); }
             SaveSettings();
             Fetch(home);
             TranslateCities();   // нашли по-русски при английском интерфейсе — название переведётся
@@ -478,8 +378,8 @@ namespace WeatherWidget
         {
             dynamic = on;
             dynItem.Checked = on;
-            dynTimer.Stop();
-            if (on) { rotation.Restart(); dynTimer.Start(); Fetch(rotation.Next()); }
+            schedule.StopDynamic();
+            if (on) { rotation.Restart(); schedule.StartDynamic(); Fetch(rotation.Next()); }
             else if (home != null) Fetch(home);
             else
             {
@@ -538,8 +438,7 @@ namespace WeatherWidget
             else if (data == null || !data.City.Same(c)) error = L.T("Нет связи с сервером", "Can't reach the server");   // показать нечего
 
             // нет свежих данных — повторить через пару минут (в динамике и так скоро следующий город)
-            retryTimer.Stop();
-            if ((d == null || d.Stale) && !dynamic) retryTimer.Start();
+            schedule.RetryLater((d == null || d.Stale) && !dynamic);
         }
 
         internal void SafeInvoke(MethodInvoker m)

@@ -82,7 +82,7 @@ Windows может показать окно «Система Windows защит
 build.bat                 :: собрать bin\WeatherWidget.exe
 test.bat                  :: собрать и прогнать автотесты
 tools\make-assets.bat     :: пересоздать иконку и картинки для README (русские и английские)
-tools\make-release.bat 1.3.1   :: собрать, проверить и упаковать dist\WeatherWidget-1.3.1.zip для релиза
+tools\make-release.bat 1.3.2   :: собрать, проверить и упаковать dist\WeatherWidget-1.3.2.zip для релиза
 ```
 
 Код написан на C# 5 — эту версию понимает компилятор `csc.exe`, встроенный в .NET Framework.
@@ -114,7 +114,9 @@ src/
     AutoStart.cs               запуск вместе с Windows
     ErrorLog.cs                журнал ошибок error.log
   UI/
-    WeatherForm.cs             окно: состояние, меню, таймеры, загрузка
+    WeatherForm.cs             окно: состояние, меню, загрузка погоды
+    RefreshSchedule.cs         когда обновлять: таймеры, сеть, выход из сна
+    AppUpdater.cs              проверка и установка новых версий
     WeatherForm.Window.cs      размер, перетаскивание, мышь, подсказки
     WeatherForm.Rendering.cs   отрисовка карточки и анимации
     WeatherIcons.cs            векторные иконки погоды
@@ -163,7 +165,9 @@ assets/cities.txt            ~2800 крупных городов на двух �
   По умолчанию °F — для США, Либерии и Мьянмы (страна из настроек Windows), выбор в меню сохраняется (`units=…`).
 - **Настройки** лежат в `%APPDATA%\WeatherWidget\settings.txt` (формат `ключ=значение`),
   кэш погоды — в `%APPDATA%\WeatherWidget\cache\`. Если что-то пошло не так, ошибка записывается
-  в `%APPDATA%\WeatherWidget\error.log` (виджет при этом продолжает работать).
+  в `%APPDATA%\WeatherWidget\error.log` (виджет при этом продолжает работать). Туда же одной строкой
+  пишется, какой источник погоды не ответил и почему, например
+  `Open-Meteo, Омск: WebException: (429) Too Many Requests`; та же ошибка — не чаще раза в 10 минут.
   Автозапуск — запись в `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, права администратора не нужны.
 
 ## Источники данных

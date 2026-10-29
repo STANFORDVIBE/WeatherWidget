@@ -48,6 +48,7 @@ namespace WeatherWidget.Tests
             Run("Кэш погоды", Cache);
             Run("Цепочка источников: Open-Meteo → MET Norway → кэш", ServiceFallback);
             Run("Медленная сеть: источники наперегонки", SlowNetwork);
+            Run("Сбои источников — в журнал", SourceFailures);
             Run("Давность данных и приписка к подсказке", AgeAndNotes);
             Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
             Run("Первый запуск: город не выбран", FirstStart);
@@ -192,6 +193,17 @@ namespace WeatherWidget.Tests
             ErrorLog.Write(path, new ArgumentException("другая"), now);
             Check(new FileInfo(path).Length > len, "другая ошибка пишется");
             ErrorLog.Write(path, null, now);   // не падает
+
+            // короткая запись — одной строкой, без стека
+            len = new FileInfo(path).Length;
+            ErrorLog.Note(path, "Open-Meteo, Омск: WebException: (429) Too Many Requests", now);
+            string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+            Eq("2026-10-29 18:30:00  Open-Meteo, Омск: WebException: (429) Too Many Requests", lines[lines.Length - 1], "запись одной строкой");
+            len = new FileInfo(path).Length;
+            ErrorLog.Note(path, "Open-Meteo, Омск: WebException: (429) Too Many Requests", now);
+            Eq(len, new FileInfo(path).Length, "та же запись подряд не повторяется");
+            ErrorLog.Note(path, "", now);   // пустая не пишется и не падает
+            Eq(len, new FileInfo(path).Length, "пустая запись");
 
             // большой журнал начинается заново, прошлый — в error.old.log
             File.WriteAllText(path, new string('x', (int)ErrorLog.MaxBytes + 10));
@@ -678,6 +690,43 @@ namespace WeatherWidget.Tests
             Eq(10800, spb != null ? spb.UtcOffset : 0, "пояс из кэша");
             WeatherData la = restarted.Get(Cities.World[0]);
             Eq(-8 * 3600, la != null ? la.UtcOffset : 0, "пояс по долготе, если ничего не известно");
+            Directory.Delete(dir, true);
+        }
+
+        // Источник не ответил — причина уходит в журнал, но одна и та же ошибка не чаще раза в 10 минут
+        static void SourceFailures()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tests", Guid.NewGuid().ToString("N"));
+            string omError = "(429) Too Many Requests";
+            bool metUp = true;
+            Func<string, string> net = delegate (string url)
+            {
+                if (url.Contains("open-meteo")) throw new System.Net.WebException(omError);
+                if (metUp) return Fixture("metno.json");
+                throw new System.Net.WebException("нет связи");
+            };
+            List<string> log = new List<string>();
+            WeatherService svc = new WeatherService(net, new WeatherCache(dir), 0);
+            svc.Failed = delegate(string m) { lock (log) log.Add(m); };
+
+            WeatherData d = svc.Get(Moscow);
+            Check(d != null && d.Source == MetNo.Name, "Open-Meteo упал — данные от MET Norway");
+            Eq(1, log.Count, "одна запись на обе попытки");
+            Eq("Open-Meteo, Москва: WebException: (429) Too Many Requests", log.Count > 0 ? log[0] : null, "источник, город и причина");
+
+            svc.Get(Spb);
+            Eq(1, log.Count, "та же ошибка (в другом городе) — не чаще раза в 10 минут");
+
+            omError = "Время ожидания операции истекло";
+            svc.Get(Moscow);
+            Eq(2, log.Count, "другая ошибка — пишется сразу");
+
+            metUp = false;
+            svc.Get(Moscow);
+            Check(log.Count == 3 && log[2].StartsWith("MET Norway, Москва: WebException: нет связи"), "сбой запасного источника — тоже");
+
+            svc.Failed = null;
+            svc.Get(Spb);   // без журнала — не падает
             Directory.Delete(dir, true);
         }
 

@@ -82,7 +82,7 @@ All you need is Windows with .NET Framework 4.x (included in Windows 10/11) — 
 build.bat                 :: build bin\WeatherWidget.exe
 test.bat                  :: build and run the tests
 tools\make-assets.bat     :: regenerate the icon and README images (Russian and English)
-tools\make-release.bat 1.3.1   :: build, test and pack dist\WeatherWidget-1.3.1.zip for a release
+tools\make-release.bat 1.3.2   :: build, test and pack dist\WeatherWidget-1.3.2.zip for a release
 ```
 
 The code is written in C# 5 — the version understood by the `csc.exe` compiler built into .NET Framework.
@@ -115,7 +115,9 @@ src/
     AutoStart.cs               starting with Windows
     ErrorLog.cs                error log error.log
   UI/
-    WeatherForm.cs             window: state, menu, timers, loading
+    WeatherForm.cs             window: state, menu, loading weather
+    RefreshSchedule.cs         when to refresh: timers, network, wake from sleep
+    AppUpdater.cs              checking for and installing new versions
     WeatherForm.Window.cs      size, dragging, mouse, tooltips
     WeatherForm.Rendering.cs   drawing the card and animation
     WeatherIcons.cs            vector weather icons
@@ -165,7 +167,9 @@ assets/cities.txt            ~2800 large cities in two languages — embedded in
   °F is the default for the US, Liberia and Myanmar (country from Windows settings); the menu choice is saved (`units=…`).
 - **Settings** live in `%APPDATA%\WeatherWidget\settings.txt` (`key=value` format),
   the weather cache — in `%APPDATA%\WeatherWidget\cache\`. If something goes wrong, the error is written
-  to `%APPDATA%\WeatherWidget\error.log` (the widget keeps running).
+  to `%APPDATA%\WeatherWidget\error.log` (the widget keeps running). The same file gets a one-line note
+  when a weather source doesn't answer and why, e.g.
+  `Open-Meteo, Omsk: WebException: (429) Too Many Requests`; the same error at most once every 10 minutes.
   Autostart is an entry in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, no admin rights needed.
 
 ## Data sources

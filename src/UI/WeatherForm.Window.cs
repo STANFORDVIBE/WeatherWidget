@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -36,8 +35,8 @@ namespace WeatherWidget
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             base.OnFormClosed(e);
-            NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
-            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            schedule.Dispose();
+            updater.Dispose();
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }   // иначе значок висит до наведения мыши
             surface.Dispose();
             tip.Dispose();

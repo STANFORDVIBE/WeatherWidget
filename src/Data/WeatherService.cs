@@ -18,6 +18,13 @@ namespace WeatherWidget
         readonly int retryDelayMs, metDelayMs, totalTimeoutMs;
         readonly Dictionary<string, int> offsets = new Dictionary<string, int>();   // известные часовые пояса городов
 
+        // Источник не ответил ни с одной попытки: «Open-Meteo, Омск: …» (виджет пишет это в error.log).
+        // Та же ошибка того же источника — не чаще раза в FailRepeat, чтобы журнал не разрастался без связи.
+        // Вызывается из фонового потока.
+        public Action<string> Failed;
+        public static readonly TimeSpan FailRepeat = TimeSpan.FromMinutes(10);
+        readonly Dictionary<string, DateTime> reported = new Dictionary<string, DateTime>();   // ошибка → когда сообщили
+
         public WeatherService(Func<string, string> download, WeatherCache cache, int retryDelayMs)
             : this(download, cache, retryDelayMs, 3000, 12000) { }
 
@@ -62,14 +69,14 @@ namespace WeatherWidget
         WeatherData TryOpenMeteo(City c)
         {
             string url = OpenMeteo.ForecastUrl(c);
-            return Retry(2, delegate { return OpenMeteo.ParseForecast(c, download(url)); });
+            return Retry(OpenMeteo.Name, c, 2, delegate { return OpenMeteo.ParseForecast(c, download(url)); });
         }
 
         WeatherData TryMetNo(City c)
         {
             string url = MetNo.ForecastUrl(c);
             int offset = KnownOffset(c);
-            return Retry(2, delegate { return MetNo.ParseForecast(c, download(url), offset); });
+            return Retry(MetNo.Name, c, 2, delegate { return MetNo.ParseForecast(c, download(url), offset); });
         }
 
         // Часовой пояс для MET Norway: последний известный от Open-Meteo, из кэша, иначе оценка по долготе
@@ -82,14 +89,36 @@ namespace WeatherWidget
             return MetNo.EstimateUtcOffset(c.Lon);
         }
 
-        WeatherData Retry(int attempts, Func<WeatherData> f)
+        WeatherData Retry(string source, City c, int attempts, Func<WeatherData> f)
         {
+            Exception last = null;
             for (int i = 0; i < attempts; i++)
             {
                 try { return f(); }
-                catch { if (i + 1 < attempts && retryDelayMs > 0) Thread.Sleep(retryDelayMs); }
+                catch (Exception e)
+                {
+                    last = e;
+                    if (i + 1 < attempts && retryDelayMs > 0) Thread.Sleep(retryDelayMs);
+                }
             }
+            Report(source, c, last);
             return null;
+        }
+
+        void Report(string source, City c, Exception e)
+        {
+            Action<string> failed = Failed;
+            if (failed == null || e == null) return;
+            string why = e.GetType().Name + ": " + e.Message;
+            string key = source + "|" + why;   // без города: в «динамической погоде» города меняются каждые 45 с
+            DateTime now = DateTime.UtcNow;
+            lock (reported)
+            {
+                DateTime when;
+                if (reported.TryGetValue(key, out when) && now - when < FailRepeat) return;
+                reported[key] = now;
+            }
+            try { failed(source + ", " + c.Name + ": " + why); } catch { }
         }
 
         static string Key(City c)

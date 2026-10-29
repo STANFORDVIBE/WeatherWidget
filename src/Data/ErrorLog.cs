@@ -5,6 +5,7 @@ using System.Text;
 namespace WeatherWidget
 {
     // Журнал ошибок %APPDATA%\WeatherWidget\error.log: виджет не исчезает молча, а причину видно.
+    // Туда же одной строкой пишется, какой источник погоды не ответил и почему (WeatherService.Failed).
     // Одна и та же ошибка подряд (например, в каждом кадре анимации) пишется один раз.
     // Файл больше 256 КБ начинается заново, прошлый остаётся рядом как error.old.log.
     static class ErrorLog
@@ -22,9 +23,22 @@ namespace WeatherWidget
         public static void Write(string path, Exception e, DateTime now)
         {
             if (e == null) return;
+            Append(path, e.ToString(), now.ToString("yyyy-MM-dd HH:mm:ss") + "  WeatherWidget " + Program.Version +
+                "\r\n" + e + "\r\n\r\n");
+        }
+
+        // Короткая запись в одну строку — например, какой источник погоды не ответил и почему
+        public static void Note(string path, string message, DateTime now)
+        {
+            if (string.IsNullOrEmpty(message)) return;
+            Append(path, message, now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + message + "\r\n");
+        }
+
+        // text — для сравнения с прошлой записью, entry — что дописать в файл
+        static void Append(string path, string text, string entry)
+        {
             try
             {
-                string text = e.ToString();
                 lock (sync)
                 {
                     if (text == last) return;
@@ -37,8 +51,7 @@ namespace WeatherWidget
                         if (File.Exists(old)) File.Delete(old);
                         File.Move(path, old);
                     }
-                    File.AppendAllText(path, now.ToString("yyyy-MM-dd HH:mm:ss") + "  WeatherWidget " + Program.Version +
-                        "\r\n" + text + "\r\n\r\n", Encoding.UTF8);
+                    File.AppendAllText(path, entry, Encoding.UTF8);
                 }
             }
             catch { }
