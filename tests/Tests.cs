@@ -59,6 +59,7 @@ namespace WeatherWidget.Tests
             Run("Подсказки при опечатках в поиске города", Typos);
             Run("Единицы: °F и mph", ImperialUnits);
             Run("Проверка обновлений", UpdateCheck);
+            Run("Час прогноза Open-Meteo — погода за следующий час", OpenMeteoHourShift);
             Run("Восход, закат и УФ-индекс", SunAndUv);
             Run("Установка обновления", UpdateInstall);
             Run("Журнал ошибок", ErrorLogFile);
@@ -104,6 +105,25 @@ namespace WeatherWidget.Tests
         }
 
         // ---------- тесты ----------
+
+        // Случай из Омска: морось была в 21–22 и 22–23, дальше сухо. В ответе Open-Meteo погода у часа T —
+        // за T−1…T, а виджет понимает час T как T…T+1. Раньше полоска и совет опаздывали на час.
+        static void OpenMeteoHourShift()
+        {
+            string json = "{\"utc_offset_seconds\":21600," +
+                "\"current\":{\"time\":\"2026-10-29T22:15\",\"temperature_2m\":3.9,\"apparent_temperature\":-0.8,\"relative_humidity_2m\":95," +
+                "\"weather_code\":3,\"wind_speed_10m\":5.8,\"is_day\":0}," +
+                "\"hourly\":{\"time\":[\"2026-10-29T22:00\",\"2026-10-29T23:00\",\"2026-10-30T00:00\",\"2026-10-30T01:00\"]," +
+                "\"temperature_2m\":[3.9,3.5,3.1,2.6],\"weather_code\":[51,51,3,3],\"precipitation_probability\":[100,94,78,53],\"is_day\":[0,0,0,0]}}";
+            WeatherData d = OpenMeteo.ParseForecast(new City("Омск", "Россия", 54.9885, 73.3242), json);
+            Eq(3, d.Hours.Count, "у последнего часа ряда нет погоды на час вперёд");
+            Eq(51, d.Hours[0].Code, "22:00–23:00 — морось (из записи 23:00)");
+            Eq(94, d.Hours[0].Precip, "вероятность — тоже из записи 23:00");
+            Eq(3.9, d.Hours[0].Temp, "температура — на 22:00");
+            Eq(3, d.Hours[1].Code, "23:00–00:00 — уже сухо");
+            DateTime now = new DateTime(2026, 10, 29, 16, 15, 0, DateTimeKind.Utc);   // 22:15 в Омске
+            Eq("Скоро морось (94%) — возьмите зонт.", Advice.PrecipNote(d, now), "морось в текущем часе");
+        }
 
         static void SunAndUv()
         {
@@ -290,7 +310,9 @@ namespace WeatherWidget.Tests
                 Eq(false, h.IsDay, "ночь");
                 Eq(3.4, h.Temp, "температура часа");
                 Check(!d.Hours.Exists(x => x.Utc == new DateTime(2026, 10, 26, 3, 0, 0)), "час без температуры пропущен");
-                HourForecast noProb = d.Hours.Find(x => x.Utc == new DateTime(2026, 10, 26, 6, 0, 0));
+                // погода и вероятность у часа T в ответе — за T−1…T, поэтому пустая вероятность у 09:00 МСК
+                // относится к часу 08:00–09:00 (05:00 UTC)
+                HourForecast noProb = d.Hours.Find(x => x.Utc == new DateTime(2026, 10, 26, 5, 0, 0));
                 Eq(-1, noProb != null ? noProb.Precip : -99, "вероятность null — неизвестна");
             }
         }
@@ -361,7 +383,8 @@ namespace WeatherWidget.Tests
             Eq("", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 61, 90), later), "старый прогноз не пугает дождём");
 
             WeatherData real = OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"));
-            Eq("Возьмите зонт — дождь до 20:00.", Advice.PrecipNote(real, Now1830), "по ответу Open-Meteo");
+            // в ответе дождь у 18:00 и 19:00 (то есть за 17–18 и 18–19), у 20:00 — пасмурно (за 19–20)
+            Eq("Возьмите зонт — дождь до 19:00.", Advice.PrecipNote(real, Now1830), "по ответу Open-Meteo");
         }
 
         static void ParseForecastWithoutDaily()

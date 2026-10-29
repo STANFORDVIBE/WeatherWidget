@@ -114,6 +114,8 @@ namespace WeatherWidget
         public const int HoursAhead = 24;   // сколько часов прогноза хранить
 
         // Почасовой прогноз от текущего часа на сутки вперёд. Время в ответе — местное (timezone=auto).
+        // Температура в ряду — на момент часа, а погода и вероятность осадков у часа T — за предыдущий
+        // час (T−1…T). Виджет (и MET Norway) понимает час T как T…T+1, поэтому погода берётся у следующего часа.
         static void ParseHours(WeatherData d, Dictionary<string, object> root, Dictionary<string, object> cur)
         {
             if (!root.ContainsKey("hourly")) return;
@@ -125,19 +127,20 @@ namespace WeatherWidget
             object[] isDay = (object[])hourly["is_day"];
             DateTime now = LocalTime((string)cur["time"]);
             DateTime from = now.Date.AddHours(now.Hour);
-            for (int i = 0; i < time.Length; i++)
+            for (int i = 0; i + 1 < time.Length; i++)
             {
                 DateTime local = LocalTime((string)time[i]);
                 if (local < from) continue;
                 if (local >= from.AddHours(HoursAhead)) break;
-                if (temp[i] == null || codes[i] == null) continue;
+                int next = i + 1;   // погода за час i…i+1
+                if (temp[i] == null || codes[next] == null) continue;
                 HourForecast h = new HourForecast();
                 h.Utc = DateTime.SpecifyKind(local.AddSeconds(-d.UtcOffset), DateTimeKind.Utc);
                 h.Temp = Num(temp[i]);
-                h.Code = (int)Num(codes[i]);
+                h.Code = (int)Num(codes[next]);
                 h.Sky = WeatherCodes.ToSky(h.Code);
                 h.IsDay = isDay[i] == null ? d.IsDay : Num(isDay[i]) != 0;
-                if (prob[i] != null) h.Precip = (int)Num(prob[i]);
+                if (prob[next] != null) h.Precip = (int)Num(prob[next]);
                 d.Hours.Add(h);
             }
         }
