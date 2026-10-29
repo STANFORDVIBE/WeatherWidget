@@ -82,7 +82,7 @@ All you need is Windows with .NET Framework 4.x (included in Windows 10/11) — 
 build.bat                 :: build bin\WeatherWidget.exe
 test.bat                  :: build and run the tests
 tools\make-assets.bat     :: regenerate the icon and README images (Russian and English)
-tools\make-release.bat 1.3.0   :: build, test and pack dist\WeatherWidget-1.3.0.zip for a release
+tools\make-release.bat 1.3.1   :: build, test and pack dist\WeatherWidget-1.3.1.zip for a release
 ```
 
 The code is written in C# 5 — the version understood by the `csc.exe` compiler built into .NET Framework.
@@ -123,6 +123,7 @@ src/
     CityPicker.cs              city panel (search, your cities)
     OpacityPanel.cs            transparency slider panel
     Dpi.cs                     display scale (DPI) of each monitor
+    MenuRenderer.cs            menus in the widget style (right click, tray icon)
     TipWindow.cs, Theme.cs, NativeMethods.cs
 tests/                       tests and sample server responses
 tools/                       icon and README image generation, release packing

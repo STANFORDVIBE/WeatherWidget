@@ -82,7 +82,7 @@ Windows может показать окно «Система Windows защит
 build.bat                 :: собрать bin\WeatherWidget.exe
 test.bat                  :: собрать и прогнать автотесты
 tools\make-assets.bat     :: пересоздать иконку и картинки для README (русские и английские)
-tools\make-release.bat 1.3.0   :: собрать, проверить и упаковать dist\WeatherWidget-1.3.0.zip для релиза
+tools\make-release.bat 1.3.1   :: собрать, проверить и упаковать dist\WeatherWidget-1.3.1.zip для релиза
 ```
 
 Код написан на C# 5 — эту версию понимает компилятор `csc.exe`, встроенный в .NET Framework.
@@ -122,6 +122,7 @@ src/
     CityPicker.cs              панель выбора города (поиск, свои города)
     OpacityPanel.cs            панель с ползунком прозрачности
     Dpi.cs                     масштаб экрана (DPI) у каждого монитора
+    MenuRenderer.cs            меню в стиле виджета (правая кнопка, значок у часов)
     TipWindow.cs, Theme.cs, NativeMethods.cs
 tests/                       автотесты и примеры ответов сервера
 tools/                       генерация иконки и картинок для README, упаковка релиза

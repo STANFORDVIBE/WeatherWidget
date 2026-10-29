@@ -196,6 +196,7 @@ namespace WeatherWidget
             menu.Items.Add(L.T("Проверить обновления", "Check for updates"), null, delegate { CheckUpdates(true); });
             menu.Items.Add(L.T("О программе", "About"), null, delegate { ShowAbout(); });
             menu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
+            MenuRenderer.Apply(menu);
             ContextMenuStrip = menu;
             if (old != null) old.Dispose();
             BuildTrayMenu();
@@ -225,6 +226,7 @@ namespace WeatherWidget
             trayMenu.Items.Add(L.T("Сбросить положение", "Reset position"), null, delegate { ResetPosition(); });
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
+            MenuRenderer.Apply(trayMenu);
             tray.ContextMenuStrip = trayMenu;
             if (old != null) old.Dispose();
         }
