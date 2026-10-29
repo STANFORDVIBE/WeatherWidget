@@ -16,7 +16,7 @@ namespace WeatherWidget
     static class Updates
     {
         // «владелец/репозиторий» на GitHub; пусто — проверка выключена
-        public static readonly string Repo = "";
+        public static readonly string Repo = "STANFORDVIBE/WeatherWidget";
 
         public static string LatestUrl(string repo)
         {
