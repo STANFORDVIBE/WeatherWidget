@@ -1,0 +1,47 @@
+# Выпуск по тегу v<версия> (например, git tag v1.2.0 && git push origin v1.2.0):
+# сборка, тесты, zip и релиз на GitHub с описанием из CHANGELOG.md.
+# Версия в теге должна совпадать с Program.Version — это проверяет tools\make-release.bat.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build, test and pack
+        shell: cmd
+        run: call tools\make-release.bat %GITHUB_REF_NAME:~1%
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $version = $tag.Substring(1)
+          $zip = "dist/WeatherWidget-$version.zip"
+          # описание — раздел «## <версия>» из CHANGELOG.md
+          $lines = Get-Content CHANGELOG.md -Encoding UTF8
+          $start = [array]::FindIndex($lines, [Predicate[string]]{ param($l) $l -match "^## $([regex]::Escape($version))\b" })
+          $notes = ''
+          if ($start -ge 0) {
+            $body = @()
+            for ($i = $start + 1; $i -lt $lines.Count -and $lines[$i] -notmatch '^## '; $i++) { $body += $lines[$i] }
+            $notes = ($body -join "`n").Trim()
+          }
+          Set-Content notes.md $notes -Encoding UTF8
+          # релиз уже создан вручную — только заменить архив
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $zip --clobber
+          } else {
+            gh release create $tag $zip --title $version --notes-file notes.md
+          }

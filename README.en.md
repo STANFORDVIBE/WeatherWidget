@@ -45,6 +45,12 @@ The source code is open — you can build the exe yourself (see "Building").
   and refreshes by itself as soon as the network is back.
 - **Tells you about new versions** — once a day it checks the latest release on GitHub; if there's a new one,
   "Version … is available — download…" appears at the top of the menu. It never downloads or installs anything by itself.
+- **Crisp at any display scale** — 125%, 150% and different scales on two monitors:
+  the widget draws in real screen pixels instead of being stretched by Windows.
+- **Always easy to find** — a tray icon: a click brings the widget to the front, its menu has
+  "Reset position" (back to the top-right corner) and "Exit". Launching the exe again
+  doesn't open a second widget — it shows the one already running.
+- **Fresh weather after sleep** — when the laptop wakes up, the weather refreshes right away.
 - **Light on the system** — ~1–2% of one CPU core, ~45 MB of memory.
 
 ![Expanded forecast and tooltip](docs/forecast.en.png)
@@ -61,6 +67,7 @@ The source code is open — you can build the exe yourself (see "Building").
 | Drag the card | move the widget |
 | Card corner | resize |
 | Right click | menu: choose city, dynamic weather, refresh, transparency, always on top, start with Windows, language, units, about, exit |
+| Tray icon | click — show the widget; right click — show, reset position, exit |
 | Transparency… | background transparency slider; mouse wheel and arrows — 5% step, Esc or click outside — close |
 
 ## Building
@@ -81,7 +88,7 @@ Code comments are in Russian.
 
 ```
 src/
-  Program.cs                 entry point, version
+  Program.cs                 entry point, version, single instance, error log
   Model/                     data: city, weather, built-in city lists
   Logic/                     logic without UI — covered by tests
     WeatherCodes.cs            WMO weather codes → sky type and description
@@ -102,6 +109,7 @@ src/
     SafeFile.cs                writing files without leaving a "half" file
     Settings.cs                settings (text file)
     AutoStart.cs               starting with Windows
+    ErrorLog.cs                error log error.log
   UI/
     WeatherForm.cs             window: state, menu, timers, loading
     WeatherForm.Window.cs      size, dragging, mouse, tooltips
@@ -110,10 +118,13 @@ src/
     LayeredSurface.cs          window with per-pixel transparency
     CityPicker.cs              city panel (search, your cities)
     OpacityPanel.cs            transparency slider panel
+    Dpi.cs                     display scale (DPI) of each monitor
     TipWindow.cs, Theme.cs, NativeMethods.cs
 tests/                       tests and sample server responses
-tools/                       icon and README image generation
+tools/                       icon and README image generation, release packing
+.github/workflows/           CI: tests on every push, release on a v<version> tag
 assets/app.ico               program icon
+assets/app.manifest          exe manifest: DPI-aware (PerMonitorV2)
 assets/cities.txt            ~2800 large cities in two languages — embedded into the exe
 ```
 
@@ -123,6 +134,10 @@ assets/cities.txt            ~2800 large cities in two languages — embedded in
   and handed to Windows via `UpdateLayeredWindow`. That's why the edges are smooth and the area outside the card
   is transparent and lets clicks through. Even at 100% the card background keeps a minimal alpha,
   so the card can still be dragged and right-clicked.
+- **Display scale.** The manifest marks the program as PerMonitorV2: Windows doesn't stretch its windows,
+  the widget multiplies the base layout (width 240) by the monitor's scale itself. When moved to a monitor
+  with a different scale (`WM_DPICHANGED`) the card keeps the same visible size;
+  the size saved to settings excludes the display scale.
 - **Smoothness.** All animations are computed from real time, not timer ticks.
   At rest — 25 fps, during transitions — ~60. The window doesn't resize when the forecast expands —
   the card is simply drawn further.
@@ -144,7 +159,8 @@ assets/cities.txt            ~2800 large cities in two languages — embedded in
 - **Units.** Weather is stored and advice is computed in °C and m/s; °F and mph are converted only for display.
   °F is the default for the US, Liberia and Myanmar (country from Windows settings); the menu choice is saved (`units=…`).
 - **Settings** live in `%APPDATA%\WeatherWidget\settings.txt` (`key=value` format),
-  the weather cache — in `%APPDATA%\WeatherWidget\cache\`.
+  the weather cache — in `%APPDATA%\WeatherWidget\cache\`. If something goes wrong, the error is written
+  to `%APPDATA%\WeatherWidget\error.log` (the widget keeps running).
   Autostart is an entry in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, no admin rights needed.
 
 ## Data sources

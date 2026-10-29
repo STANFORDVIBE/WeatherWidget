@@ -15,11 +15,16 @@ namespace WeatherWidget
         Bitmap bitmap;
         int width, height;
 
-        public void Present(IntPtr hwnd, int w, int h, byte alpha, Action<Graphics> render)
+        // scale — масштаб экрана: render рисует в базовых координатах, кадр — в физических пикселях
+        public void Present(IntPtr hwnd, int w, int h, byte alpha, Action<Graphics> render, float scale = 1f)
         {
             if (w <= 0 || h <= 0) return;
             Ensure(w, h);
-            using (Graphics g = Graphics.FromImage(bitmap)) render(g);
+            using (Graphics g = Graphics.FromImage(bitmap))
+            {
+                if (scale != 1f) g.ScaleTransform(scale, scale);
+                render(g);
+            }
 
             NativeMethods.SIZE size = new NativeMethods.SIZE { CX = w, CY = h };
             NativeMethods.POINT src = new NativeMethods.POINT();

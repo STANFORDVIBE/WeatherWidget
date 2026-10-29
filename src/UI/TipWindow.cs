@@ -19,6 +19,8 @@ namespace WeatherWidget
         readonly Font fBody = new Font("Segoe UI", 12, GraphicsUnit.Pixel);
         string title = "", body = "";
         SizeF titleSize, bodySize;
+        Size box;                // размер в базовых координатах (вместе с полем под тень)
+        float dpi = 1f;          // масштаб экрана, где показана подсказка
         bool shown;
 
         public TipWindow()
@@ -70,7 +72,8 @@ namespace WeatherWidget
             }
             int w = (int)Math.Ceiling(Math.Max(titleSize.Width, bodySize.Width)) + 2 * Pad;
             int h = (int)Math.Ceiling(bodySize.Height + (title == "" ? 0 : titleSize.Height + Gap)) + 2 * Pad;
-            return new Size(w + 2 * Shadow, h + 2 * Shadow);
+            box = new Size(w + 2 * Shadow, h + 2 * Shadow);
+            return box;
         }
 
         // Показать подсказку так, чтобы её угол был у точки экрана (обычно чуть ниже и правее курсора).
@@ -78,17 +81,19 @@ namespace WeatherWidget
         // и открытая панель выбора города теряла его и закрывалась.
         public void ShowAt(string t, string b, Point at)
         {
-            Size size = SetText(t, b);
-            int panelW = size.Width - 2 * Shadow, panelH = size.Height - 2 * Shadow;
+            dpi = Dpi.AtPoint(at);
+            SetText(t, b);
+            Size size = new Size(Dpi.Px(box.Width, dpi), Dpi.Px(box.Height, dpi));
+            int shadow = Dpi.Px(Shadow, dpi), panelW = size.Width - 2 * shadow, panelH = size.Height - 2 * shadow;
 
             // не вылезать за край экрана; не хватает места снизу — показать над курсором
             Rectangle wa = Screen.FromPoint(at).WorkingArea;
             int px = Math.Max(wa.Left, Math.Min(at.X, wa.Right - panelW));
-            int py = at.Y + panelH <= wa.Bottom ? at.Y : at.Y - panelH - 30;
+            int py = at.Y + panelH <= wa.Bottom ? at.Y : at.Y - panelH - Dpi.Px(30, dpi);
             py = Math.Max(wa.Top, py);
-            Bounds = new Rectangle(px - Shadow, py - Shadow, size.Width, size.Height);
+            Bounds = new Rectangle(px - shadow, py - shadow, size.Width, size.Height);
 
-            surface.Present(Handle, Width, Height, 255, Render);
+            surface.Present(Handle, Width, Height, 255, Render, dpi);
             NativeMethods.SetWindowPos(Handle, NativeMethods.HWND_TOPMOST, Left, Top, Width, Height, NativeMethods.SWP_NOACTIVATE);
             NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
             shown = true;
@@ -115,7 +120,7 @@ namespace WeatherWidget
             g.Clear(Color.Transparent);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-            Theme.DrawPanel(g, new RectangleF(Shadow, Shadow, Width - 2 * Shadow, Height - 2 * Shadow), Radius);
+            Theme.DrawPanel(g, new RectangleF(Shadow, Shadow, box.Width - 2 * Shadow, box.Height - 2 * Shadow), Radius);
 
             float x = Shadow + Pad, y = Shadow + Pad;
             if (title != "")

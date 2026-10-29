@@ -15,9 +15,10 @@ if not exist bin mkdir bin
 set "ICON="
 if exist assets\app.ico set "ICON=/win32icon:assets\app.ico"
 
-"%CSC%" /nologo /target:winexe /codepage:65001 /optimize+ /warn:4 %ICON% ^
+rem the manifest makes the widget DPI-aware: crisp at 125-150 % display scale
+"%CSC%" /nologo /target:winexe /codepage:65001 /optimize+ /warn:4 %ICON% /win32manifest:assets\app.manifest ^
   /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
-  /resource:assets\cities.txt,WeatherWidget.cities.txt ^
+  /resource:assets\cities.txt,WeatherWidget.cities.txt /resource:assets\app.ico,WeatherWidget.app.ico ^
   /out:bin\WeatherWidget.exe /recurse:src\*.cs
 if errorlevel 1 exit /b 1
 

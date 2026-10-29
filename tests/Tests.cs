@@ -59,6 +59,8 @@ namespace WeatherWidget.Tests
             Run("Подсказки при опечатках в поиске города", Typos);
             Run("Единицы: °F и mph", ImperialUnits);
             Run("Проверка обновлений", UpdateCheck);
+            Run("Журнал ошибок", ErrorLogFile);
+            Run("Окно: масштаб сохраняется без масштаба экрана", ScaleSaved);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -100,6 +102,47 @@ namespace WeatherWidget.Tests
         }
 
         // ---------- тесты ----------
+
+        static void ErrorLogFile()
+        {
+            string path = Path.Combine(Path.GetDirectoryName(TempFile()), "error.log");
+            DateTime now = new DateTime(2026, 10, 29, 18, 30, 0);
+            ErrorLog.Reset();
+            ErrorLog.Write(path, new InvalidOperationException("сломалась отрисовка"), now);
+            string text = File.ReadAllText(path);
+            Check(text.StartsWith("2026-10-29 18:30:00  WeatherWidget " + WeatherWidget.Program.Version), "время и версия");
+            Check(text.Contains("сломалась отрисовка"), "текст ошибки");
+
+            // та же ошибка в каждом кадре не раздувает журнал
+            long len = new FileInfo(path).Length;
+            ErrorLog.Write(path, new InvalidOperationException("сломалась отрисовка"), now);
+            Eq(len, new FileInfo(path).Length, "повтор подряд не пишется");
+            ErrorLog.Write(path, new ArgumentException("другая"), now);
+            Check(new FileInfo(path).Length > len, "другая ошибка пишется");
+            ErrorLog.Write(path, null, now);   // не падает
+
+            // большой журнал начинается заново, прошлый — в error.old.log
+            File.WriteAllText(path, new string('x', (int)ErrorLog.MaxBytes + 10));
+            ErrorLog.Write(path, new Exception("после переполнения"), now);
+            string old = Path.Combine(Path.GetDirectoryName(path), "error.old.log");
+            Check(File.Exists(old) && new FileInfo(old).Length > ErrorLog.MaxBytes, "прошлый журнал сохранён");
+            Check(new FileInfo(path).Length < 10000 && File.ReadAllText(path).Contains("после переполнения"), "новый журнал");
+
+            ErrorLog.Reset();
+            Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        // В настройки пишется масштаб, выбранный пользователем; у тестов (без манифеста) масштаб экрана — 1
+        static void ScaleSaved()
+        {
+            string path = TempFile();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\nscale=1.5\n");
+            using (WeatherForm f = new WeatherForm(path)) f.SaveSettings();
+            Settings l = Settings.Load(path);
+            Check(l.Scale.HasValue && Math.Abs(l.Scale.Value - 1.5f) < 0.01, "масштаб 1.5 сохранился");
+            Directory.Delete(Path.GetDirectoryName(path), true);
+        }
 
         static void WeatherCodesMap()
         {

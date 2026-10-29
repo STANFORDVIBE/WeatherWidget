@@ -13,7 +13,8 @@ namespace WeatherWidget
 
         readonly TipWindow tip = new TipWindow();
         TipKind tipShown = TipKind.None;
-        float scale = 1f;            // масштаб карточки (ширина окна / W)
+        float scale = 1f;            // масштаб карточки в физических пикселях (ширина окна / W)
+        float dpi = 1f;              // масштаб экрана, на котором окно (1 — 100 %)
         bool fixingSize;
 
         protected override CreateParams CreateParams
@@ -36,6 +37,8 @@ namespace WeatherWidget
         {
             base.OnFormClosed(e);
             NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
+            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }   // иначе значок висит до наведения мыши
             surface.Dispose();
             tip.Dispose();
         }
@@ -43,6 +46,33 @@ namespace WeatherWidget
         void UpdateScale()
         {
             scale = ClientSize.Width / (float)W;
+        }
+
+        // Масштаб, выбранный пользователем (за углы), без масштаба экрана — он и сохраняется в настройки
+        float UserScale { get { return scale / dpi; } }
+
+        // Показать виджет поверх окон — из значка у часов или при повторном запуске exe.
+        // Карточка за пределами экранов — вернуть на основной экран.
+        internal void ShowWidget()
+        {
+            HideTip();
+            if (!CardOnScreen(Location)) Place(null, UserScale);
+            if (!Visible) Show();
+            Activate();
+            if (!TopMost)
+            {
+                // Activate не всегда поднимает окно над остальными (например, после Win+D) — поднять явно
+                TopMost = true;
+                TopMost = false;
+            }
+        }
+
+        // Вернуть виджет в правый верхний угол основного экрана (размер прежний)
+        internal void ResetPosition()
+        {
+            Place(null, UserScale);
+            ShowWidget();
+            SaveSettings();
         }
 
         // ---------- Размер ----------
@@ -98,7 +128,7 @@ namespace WeatherWidget
                 NativeMethods.RECT rc = (NativeMethods.RECT)Marshal.PtrToStructure(m.LParam, typeof(NativeMethods.RECT));
                 int edge = m.WParam.ToInt32();
                 int w = rc.Right - rc.Left;
-                w = Math.Max((int)(W * MinScale), Math.Min((int)(W * MaxScale), w));
+                w = Math.Max((int)(W * MinScale * dpi), Math.Min((int)(W * MaxScale * dpi), w));
                 int h = (int)Math.Round(w * (double)H1 / W);
                 bool left = edge == NativeMethods.WMSZ_LEFT || edge == NativeMethods.WMSZ_TOPLEFT || edge == NativeMethods.WMSZ_BOTTOMLEFT;
                 bool top = edge == NativeMethods.WMSZ_TOP || edge == NativeMethods.WMSZ_TOPLEFT || edge == NativeMethods.WMSZ_TOPRIGHT;
@@ -106,6 +136,18 @@ namespace WeatherWidget
                 if (top) rc.Top = rc.Bottom - h; else rc.Bottom = rc.Top + h;
                 Marshal.StructureToPtr(rc, m.LParam, false);
                 m.Result = (IntPtr)1;
+                return;
+            }
+            if (m.Msg == NativeMethods.WM_DPICHANGED)
+            {
+                // окно перетащили на монитор с другим масштабом (или масштаб сменили в настройках):
+                // тот же видимый размер карточки — в новых физических пикселях. Место — где предлагает Windows.
+                float k = UserScale;
+                dpi = (m.WParam.ToInt32() & 0xFFFF) / 96f;
+                NativeMethods.RECT rc = (NativeMethods.RECT)Marshal.PtrToStructure(m.LParam, typeof(NativeMethods.RECT));
+                Bounds = new Rectangle(rc.Left, rc.Top, Dpi.Px(W * k, dpi), Dpi.Px(H1 * k, dpi));
+                HideTip();
+                m.Result = IntPtr.Zero;
                 return;
             }
             base.WndProc(ref m);

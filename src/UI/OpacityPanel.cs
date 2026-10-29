@@ -19,6 +19,7 @@ namespace WeatherWidget
         readonly Font fTitle = new Font("Segoe UI Semibold", 13, GraphicsUnit.Pixel);
         readonly Font fHint = new Font("Segoe UI", 11, GraphicsUnit.Pixel);
         bool dragging, knobHover;
+        float dpi = 1f;   // масштаб экрана, где открыта панель
 
         public OpacityPanel(WeatherForm owner)
         {
@@ -44,10 +45,13 @@ namespace WeatherWidget
         // Открыть под карточкой (а если внизу нет места — над ней); координаты экранные
         public void ShowNear(int centerX, int cardTop, int cardBottom)
         {
+            dpi = Dpi.AtPoint(new Point(centerX, cardBottom));
+            Size = new Size(Dpi.Px(PanelW + 2 * Shadow, dpi), Dpi.Px(PanelH + 2 * Shadow, dpi));
             Rectangle wa = Screen.FromPoint(new Point(centerX, cardBottom)).WorkingArea;
             int x = Math.Max(wa.Left, Math.Min(centerX - Width / 2, wa.Right - Width));
-            int y = cardBottom - Shadow + 8;
-            if (y + Height > wa.Bottom) y = cardTop - Height + Shadow - 8;
+            int gap = Dpi.Px(Shadow - 8, dpi);
+            int y = cardBottom - gap;
+            if (y + Height > wa.Bottom) y = cardTop - Height + gap;
             Location = new Point(x, Math.Max(wa.Top, y));
             Show(owner);
             Activate();
@@ -104,16 +108,18 @@ namespace WeatherWidget
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (e.Button != MouseButtons.Left || !OnTrack(e.Location)) return;
+            Point p = Dpi.ToBase(e.Location, dpi);
+            if (e.Button != MouseButtons.Left || !OnTrack(p)) return;
             dragging = true;
-            Value = ValueAt(e.X);   // клик по полосе — ползунок сразу туда
+            Value = ValueAt(p.X);   // клик по полосе — ползунок сразу туда
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            if (dragging) { Value = ValueAt(e.X); return; }
-            bool over = OnTrack(e.Location);
+            Point p = Dpi.ToBase(e.Location, dpi);
+            if (dragging) { Value = ValueAt(p.X); return; }
+            bool over = OnTrack(p);
             Cursor = over ? Cursors.Hand : Cursors.Default;
             if (over != knobHover) { knobHover = over; Present(); }
         }
@@ -167,7 +173,7 @@ namespace WeatherWidget
         void Present()
         {
             if (!IsHandleCreated || !Visible || IsDisposed) return;
-            surface.Present(Handle, Width, Height, 255, Render);
+            surface.Present(Handle, Width, Height, 255, Render, dpi);
         }
 
         // Картинка панели без показа окна — для тестов

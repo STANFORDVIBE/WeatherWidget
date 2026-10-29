@@ -94,13 +94,20 @@ namespace WeatherWidget
         {
             using (GraphicsPath p = new GraphicsPath(FillMode.Winding))   // Winding — без «дыр» на пересечениях
             {
-                p.AddEllipse(cx - 50 * s, cy - 10 * s, 44 * s, 36 * s);
-                p.AddEllipse(cx - 28 * s, cy - 34 * s, 52 * s, 52 * s);
-                p.AddEllipse(cx + 6 * s, cy - 20 * s, 44 * s, 44 * s);
-                p.AddRectangle(new RectangleF(cx - 30 * s, cy + 2 * s, 60 * s, 24 * s));
+                // боковые круги касаются плоского низа (y = cy + 26s), а прямоугольник между ними
+                // идёт от их центров — так низ ровный и переходит в бока без ступенек
+                AddCircle(p, cx - 33 * s, cy + 9 * s, 17 * s);
+                AddCircle(p, cx - 4 * s, cy - 8 * s, 25 * s);
+                AddCircle(p, cx + 31 * s, cy + 7 * s, 19 * s);
+                p.AddRectangle(new RectangleF(cx - 33 * s, cy + 9 * s, 64 * s, 17 * s));
                 using (SolidBrush b = new SolidBrush(c))
                     g.FillPath(b, p);
             }
+        }
+
+        static void AddCircle(GraphicsPath p, float x, float y, float r)
+        {
+            p.AddEllipse(x - r, y - r, 2 * r, 2 * r);
         }
 
         // Капли дождя или снежинки, падающие из-под облака

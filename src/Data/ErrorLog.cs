@@ -1,0 +1,50 @@
+using System;
+using System.IO;
+using System.Text;
+
+namespace WeatherWidget
+{
+    // Журнал ошибок %APPDATA%\WeatherWidget\error.log: виджет не исчезает молча, а причину видно.
+    // Одна и та же ошибка подряд (например, в каждом кадре анимации) пишется один раз.
+    // Файл больше 256 КБ начинается заново, прошлый остаётся рядом как error.old.log.
+    static class ErrorLog
+    {
+        public const long MaxBytes = 256 * 1024;
+        static readonly object sync = new object();
+        static string last;
+
+        public static string DefaultPath
+        {
+            get { return Path.Combine(Path.GetDirectoryName(Settings.DefaultPath), "error.log"); }
+        }
+
+        // Не бросает исключений: журнал не должен сам ронять виджет
+        public static void Write(string path, Exception e, DateTime now)
+        {
+            if (e == null) return;
+            try
+            {
+                string text = e.ToString();
+                lock (sync)
+                {
+                    if (text == last) return;
+                    last = text;
+                    Directory.CreateDirectory(Path.GetDirectoryName(path));
+                    FileInfo fi = new FileInfo(path);
+                    if (fi.Exists && fi.Length > MaxBytes)
+                    {
+                        string old = Path.ChangeExtension(path, ".old.log");
+                        if (File.Exists(old)) File.Delete(old);
+                        File.Move(path, old);
+                    }
+                    File.AppendAllText(path, now.ToString("yyyy-MM-dd HH:mm:ss") + "  WeatherWidget " + Program.Version +
+                        "\r\n" + text + "\r\n\r\n", Encoding.UTF8);
+                }
+            }
+            catch { }
+        }
+
+        // Для тестов: следующая ошибка запишется, даже если совпадает с прошлой
+        internal static void Reset() { lock (sync) last = null; }
+    }
+}

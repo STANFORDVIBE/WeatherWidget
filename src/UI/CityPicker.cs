@@ -50,6 +50,7 @@ namespace WeatherWidget
         int fade;                      // непрозрачность при появлении, 0..255
         bool openUp;                   // панель открыта над виджетом (внизу не хватило места)
         int anchorY;                   // край, к которому «прилипает» панель при изменении высоты
+        float dpi = 1f;                // масштаб экрана, где открыта панель
 
         public CityPicker(WeatherForm owner)
         {
@@ -89,10 +90,13 @@ namespace WeatherWidget
         // Открыть под названием города (cityBottom — низ надписи, cityTop — верх, на экране)
         public void ShowNear(int centerX, int cityTop, int cityBottom)
         {
+            dpi = Dpi.AtPoint(new Point(centerX, cityBottom));
+            Size = new Size(Dpi.Px(PanelW + 2 * Shadow, dpi), Dpi.Px(PanelHeight() + 2 * Shadow, dpi));
             Rectangle wa = Screen.FromPoint(new Point(centerX, cityBottom)).WorkingArea;
             int x = Math.Max(wa.Left, Math.Min(centerX - Width / 2, wa.Right - Width));
-            openUp = cityBottom - Shadow + 4 + Height > wa.Bottom;
-            anchorY = openUp ? cityTop + Shadow - 4 : cityBottom - Shadow + 4;
+            int gap = Dpi.Px(Shadow - 4, dpi);
+            openUp = cityBottom - gap + Height > wa.Bottom;
+            anchorY = openUp ? cityTop + gap : cityBottom - gap;
             Location = new Point(x, openUp ? anchorY - Height : anchorY);
             fade = 0;
             Show(owner);
@@ -162,7 +166,7 @@ namespace WeatherWidget
         // Подогнать высоту окна под содержимое (край у названия города остаётся на месте)
         void Relayout()
         {
-            int h = PanelHeight() + 2 * Shadow;
+            int h = Dpi.Px(PanelHeight() + 2 * Shadow, dpi);
             if (h != Height)
                 Bounds = new Rectangle(Left, openUp ? anchorY - h : Top, Width, h);
             Present();
@@ -305,8 +309,9 @@ namespace WeatherWidget
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            int h = RowAt(e.Location);
-            bool x = h >= 0 && rows[h].Removable && XRect(RowRect(h)).Contains(e.Location);
+            Point p = Dpi.ToBase(e.Location, dpi);
+            int h = RowAt(p);
+            bool x = h >= 0 && rows[h].Removable && XRect(RowRect(h)).Contains(p);
             Cursor = h >= 0 ? Cursors.Hand : Cursors.Default;
             if (h != hover || x != hoverX)
             {
@@ -327,9 +332,10 @@ namespace WeatherWidget
         {
             base.OnMouseDown(e);
             if (e.Button != MouseButtons.Left) return;
-            int i = RowAt(e.Location);
+            Point p = Dpi.ToBase(e.Location, dpi);
+            int i = RowAt(p);
             if (i < 0) return;
-            if (rows[i].Removable && XRect(RowRect(i)).Contains(e.Location)) Remove(rows[i]);
+            if (rows[i].Removable && XRect(RowRect(i)).Contains(p)) Remove(rows[i]);
             else Pick(rows[i]);
         }
 
@@ -338,7 +344,7 @@ namespace WeatherWidget
         void Present()
         {
             if (!IsHandleCreated || !Visible || IsDisposed) return;
-            surface.Present(Handle, Width, Height, (byte)fade, Render);
+            surface.Present(Handle, Width, Height, (byte)fade, Render, dpi);
         }
 
         // Картинка панели без показа окна — для тестов и README
@@ -358,7 +364,7 @@ namespace WeatherWidget
             g.Clear(Color.Transparent);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-            int panelH = Height - 2 * Shadow;
+            int panelH = PanelHeight();
             RectangleF panel = new RectangleF(Shadow, Shadow, PanelW, panelH);
 
             Theme.DrawPanel(g, panel, Radius);

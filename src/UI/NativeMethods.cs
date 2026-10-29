@@ -6,7 +6,7 @@ namespace WeatherWidget
     // Вызовы Windows API, которых нет в WinForms
     static class NativeMethods
     {
-        public const int WM_NCHITTEST = 0x84, WM_NCLBUTTONDOWN = 0xA1, WM_SIZING = 0x214;
+        public const int WM_NCHITTEST = 0x84, WM_NCLBUTTONDOWN = 0xA1, WM_SIZING = 0x214, WM_DPICHANGED = 0x2E0;
         public const int HTTRANSPARENT = -1, HTCLIENT = 1, HTCAPTION = 2;
         public const int HTTOPLEFT = 13, HTTOPRIGHT = 14, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
         public const int WMSZ_LEFT = 1, WMSZ_TOP = 3, WMSZ_TOPLEFT = 4, WMSZ_TOPRIGHT = 5, WMSZ_BOTTOMLEFT = 7;
@@ -43,6 +43,15 @@ namespace WeatherWidget
         public const int WM_MOUSEACTIVATE = 0x21, MA_NOACTIVATE = 3;
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
         public const uint SWP_NOACTIVATE = 0x10;
+
+        // масштаб экрана (DPI) монитора; Windows 8.1+
+        public const uint MONITOR_DEFAULTTONEAREST = 2;
+        [DllImport("user32.dll")] public static extern IntPtr MonitorFromPoint(POINT pt, uint flags);
+        [DllImport("shcore.dll")] public static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint dpiX, out uint dpiY);
+
+        // разрешить первой копии виджета выйти на передний план (её будит вторая)
+        [DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int processId);
+        public const int ASFW_ANY = -1;
 
         [DllImport("user32.dll")]
         public static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, IntPtr pptDst, ref SIZE psize,

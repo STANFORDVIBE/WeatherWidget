@@ -18,6 +18,8 @@
 • Перетаскивание — переместить, угол карточки — размер
 • Правая кнопка — меню: прозрачность, поверх окон, автозапуск,
   язык (русский / English), единицы (°C / °F), выход
+• Значок у часов — показать виджет, если он потерялся за окнами;
+  в его меню — «Сбросить положение» и «Выход»
 
 --------------------------------------------------------------
 
@@ -38,6 +40,8 @@ CONTROLS
 • Drag — move, card corner — resize
 • Right click — menu: transparency, always on top, start with Windows,
   language (Русский / English), units (°C / °F), exit
+• Tray icon — bring the widget back if it's lost behind windows;
+  its menu has "Reset position" and "Exit"
 
 Requires Windows 10 or 11.
 Data: Open-Meteo, MET Norway, GeoNames (CC BY 4.0). License: MIT.

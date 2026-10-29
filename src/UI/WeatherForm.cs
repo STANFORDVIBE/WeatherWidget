@@ -5,6 +5,7 @@ using System.IO;
 using System.Net.NetworkInformation;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace WeatherWidget
 {
@@ -36,8 +37,9 @@ namespace WeatherWidget
         readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer();  // новая версия на GitHub
         UpdateInfo update;                 // вышла новая версия; null — нет или ещё не проверяли
         // меню пересобирается при смене языка
-        ContextMenuStrip menu;
+        ContextMenuStrip menu, trayMenu;
         ToolStripMenuItem dynItem, topMostItem, autoStartItem;
+        NotifyIcon tray;                   // значок у часов: окна нет в панели задач, а виджет бывает не найти
 
         // для панели выбора города (CityPicker)
         internal City Home { get { return home; } }
@@ -92,19 +94,31 @@ namespace WeatherWidget
             dynamic = s.Dynamic;
             if (s.Transparency.HasValue) bgTransparency = Math.Max(0, Math.Min(MaxTransparency, s.Transparency.Value));
             TopMost = s.TopMost;
-            if (s.Scale.HasValue)
-            {
-                float k = Math.Max(MinScale, Math.Min(MaxScale, s.Scale.Value));
-                ClientSize = new Size((int)Math.Round(W * k), (int)Math.Round(H1 * k));
-            }
-            UpdateScale();
+            Place(s.Position, s.Scale.HasValue ? Math.Max(MinScale, Math.Min(MaxScale, s.Scale.Value)) : 1f);
+        }
 
+        // Поставить окно в точку at (null — в правый верхний угол основного экрана) с масштабом k.
+        // Размер — с учётом масштаба экрана в этой точке. Если карточка оказалась за пределами
+        // экранов (например, отключили монитор) — вернуть на основной.
+        void Place(Point? at, float k)
+        {
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;
-            Location = s.Position ?? new Point(wa.Right - Width - 30, wa.Top + 30);
-            // если окно оказалось за пределами экранов (например, отключили монитор) — вернуть на основной
-            bool visible = false;
-            foreach (Screen sc in Screen.AllScreens) if (sc.WorkingArea.IntersectsWith(new Rectangle(Location, Size))) visible = true;
-            if (!visible) Location = new Point(wa.Right - Width - 30, wa.Top + 30);
+            bool chosen = at != null;
+            // масштаб экрана — там, где окажется середина карточки
+            dpi = Dpi.AtPoint(at.HasValue ? new Point(at.Value.X + (int)(W * k / 2), at.Value.Y + (int)(H0 * k / 2)) : new Point(wa.Right - 1, wa.Top));
+            ClientSize = new Size(Dpi.Px(W * k, dpi), Dpi.Px(H1 * k, dpi));
+            UpdateScale();
+            if (at == null) at = new Point(wa.Right - Width - Dpi.Px(30, dpi), wa.Top + Dpi.Px(30, dpi));
+            if (chosen && !CardOnScreen(at.Value)) { Place(null, k); return; }
+            Location = at.Value;
+        }
+
+        // Видна ли карточка (без прозрачного места под прогноз) хоть на одном экране
+        bool CardOnScreen(Point at)
+        {
+            Rectangle card = new Rectangle(at, new Size(Width, (int)(H0 * scale)));
+            foreach (Screen sc in Screen.AllScreens) if (sc.WorkingArea.IntersectsWith(card)) return true;
+            return false;
         }
 
         internal void SaveSettings()
@@ -114,7 +128,7 @@ namespace WeatherWidget
             s.Position = Location;
             s.TopMost = TopMost;
             s.Dynamic = dynamic;
-            s.Scale = scale;
+            s.Scale = UserScale;
             s.Transparency = bgTransparency;
             s.Lang = lang;
             s.Units = units;
@@ -173,6 +187,44 @@ namespace WeatherWidget
             menu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
             ContextMenuStrip = menu;
             if (old != null) old.Dispose();
+            BuildTrayMenu();
+        }
+
+        // Значок у часов (только у настоящего виджета — не в тестах и не в tools\)
+        internal void EnableTray()
+        {
+            if (tray != null) return;
+            tray = new NotifyIcon();
+            using (System.IO.Stream ico = typeof(WeatherForm).Assembly.GetManifestResourceStream("WeatherWidget.app.ico"))
+                if (ico != null) tray.Icon = new Icon(ico, SystemInformation.SmallIconSize);
+            tray.MouseClick += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) ShowWidget(); };
+            BuildTrayMenu();
+            UpdateTrayText();
+            tray.Visible = true;
+        }
+
+        void BuildTrayMenu()
+        {
+            if (tray == null) return;
+            ContextMenuStrip old = trayMenu;
+            trayMenu = new ContextMenuStrip();
+            ToolStripMenuItem show = new ToolStripMenuItem(L.T("Показать", "Show"), null, delegate { ShowWidget(); });
+            show.Font = new Font(show.Font, FontStyle.Bold);
+            trayMenu.Items.Add(show);
+            trayMenu.Items.Add(L.T("Сбросить положение", "Reset position"), null, delegate { ResetPosition(); });
+            trayMenu.Items.Add(new ToolStripSeparator());
+            trayMenu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
+            tray.ContextMenuStrip = trayMenu;
+            if (old != null) old.Dispose();
+        }
+
+        // Подсказка у значка: «Погода — Омск, +5°» (Windows обрезает её до 63 символов)
+        void UpdateTrayText()
+        {
+            if (tray == null) return;
+            string t = L.T("Погода", "Weather");
+            if (data != null) t += " — " + data.City.Name + ", " + Format.Deg(data.Temp);
+            tray.Text = t.Length > 63 ? t.Substring(0, 62) + "…" : t;
         }
 
         // Сменить язык сразу, без перезапуска: меню, карточка и города «динамической погоды»
@@ -270,6 +322,15 @@ namespace WeatherWidget
 
             // сеть вернулась — обновить сразу, не дожидаясь таймера
             NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
+            // компьютер проснулся — погода могла устареть на время сна
+            SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        }
+
+        void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode != PowerModes.Resume) return;
+            // сеть после сна поднимается не сразу: не вышло — повторит retryTimer или OnNetworkChanged
+            SafeInvoke(delegate { refreshTimer.Stop(); refreshTimer.Start(); Fetch(target); });
         }
 
         void OnNetworkChanged(object sender, NetworkAvailabilityEventArgs e)
@@ -381,6 +442,7 @@ namespace WeatherWidget
             if (data != null && data.City.Same(c)) return;
             if (data != null) StartCityTransition();
             data = cached;   // null — карточка покажет название города и «Загрузка…»
+            UpdateTrayText();
         }
 
         void OnWeather(City c, WeatherData d)
@@ -392,6 +454,7 @@ namespace WeatherWidget
                 if (data != null && !data.City.Same(d.City)) StartCityTransition();
                 data = d;
                 error = null;
+                UpdateTrayText();
             }
             else if (data == null || !data.City.Same(c)) error = L.T("Нет связи с сервером", "Can't reach the server");   // показать нечего
 
