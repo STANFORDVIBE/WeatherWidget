@@ -17,6 +17,7 @@ if exist assets\app.ico set "ICON=/win32icon:assets\app.ico"
 
 "%CSC%" /nologo /target:winexe /codepage:65001 /optimize+ /warn:4 %ICON% ^
   /r:System.Web.Extensions.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll ^
+  /resource:assets\cities.txt,WeatherWidget.cities.txt ^
   /out:bin\WeatherWidget.exe /recurse:src\*.cs
 if errorlevel 1 exit /b 1
 

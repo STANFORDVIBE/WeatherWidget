@@ -146,6 +146,7 @@ namespace WeatherWidget
                 r.Title = g.City.Name;
                 int comma = g.Label.IndexOf(", ");
                 r.Subtitle = comma >= 0 ? g.Label.Substring(comma + 2) : g.City.Country;   // «регион, страна»
+                if (g.Typos > 0) r.Subtitle = L.T("может, вы искали? · ", "did you mean? · ") + r.Subtitle;   // подсказка при опечатке
                 r.Current = !owner.Dynamic && g.City.Same(owner.Home);
                 rows.Add(r);
             }
@@ -193,12 +194,17 @@ namespace WeatherWidget
         {
             string q = query.Trim();
             int seq = ++searchSeq;
-            string lang = L.Code, url = OpenMeteo.SearchUrl(q, lang);
+            // Open-Meteo ищет названия на языке запроса: «Сидней» с language=en не находит ничего.
+            // Набрали кириллицей — ищем по-русски (выбранный город потом переведётся сам).
+            string lang = City.GuessLang(q) == "ru" ? "ru" : L.Code, url = OpenMeteo.SearchUrl(q, lang);
+            string uiLang = L.Code;
             ThreadPool.QueueUserWorkItem(delegate
             {
-                List<GeoResult> found = null;
-                try { found = OpenMeteo.ParseSearch(Http.Download(url), lang); }
+                List<GeoResult> server = null;
+                try { server = OpenMeteo.ParseSearch(Http.Download(url), lang); }
                 catch { }
+                // подсказки при опечатках — из встроенного списка, работают и без связи
+                List<GeoResult> found = CitySuggest.Merge(server, CitySuggest.Find(q, uiLang, 5), 8);
                 try
                 {
                     if (!IsDisposed && IsHandleCreated)

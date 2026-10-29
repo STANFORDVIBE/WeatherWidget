@@ -26,9 +26,82 @@ namespace WeatherWidget.Tools
             if (args.Length == 2 && args[0] == "icon") { MakeIcon(args[1]); return 0; }
             if (args.Length == 2 && args[0] == "screenshots") { MakeScreenshots(args[1], "ru"); return 0; }
             if (args.Length == 3 && args[0] == "screenshots") { MakeScreenshots(args[1], args[2]); return 0; }
-            Console.WriteLine("Использование: WeatherWidget.Tools.exe icon <файл.ico> | screenshots <папка> [ru|en]");
+            if (args.Length == 4 && args[0] == "cities") return MakeCities(args[1], args[2], args[3]);
+            Console.WriteLine("Использование: WeatherWidget.Tools.exe icon <файл.ico> | screenshots <папка> [ru|en]\n" +
+                "  | cities <cities15000.txt> <countryInfo.txt> <assets\\cities.txt>");
             return 1;
         }
+
+        // ---------- Список крупных городов для подсказок при опечатках ----------
+
+        const int WorldMinPopulation = 300000, NearMinPopulation = 30000;
+        // СНГ и Балтия — здесь в списке и города поменьше
+        static readonly string[] NearCountries = { "RU", "BY", "KZ", "UA", "UZ", "AM", "GE", "AZ", "KG", "MD", "TJ", "TM", "LV", "LT", "EE" };
+
+        // Из выгрузок GeoNames (https://download.geonames.org/export/dump/: cities15000.zip, countryInfo.txt)
+        // делает assets\cities.txt. Английские названия — из GeoNames, русские — у Open-Meteo по номеру города.
+        static int MakeCities(string citiesPath, string countriesPath, string outPath)
+        {
+            System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072;
+            System.Net.ServicePointManager.DefaultConnectionLimit = 8;
+            Dictionary<string, string> countryEn = new Dictionary<string, string>();
+            foreach (string line in File.ReadAllLines(countriesPath, Encoding.UTF8))
+            {
+                if (line.StartsWith("#")) continue;
+                string[] p = line.Split('\t');
+                if (p.Length > 4) countryEn[p[0]] = p[4];
+            }
+
+            List<string[]> picked = new List<string[]>();
+            foreach (string line in File.ReadAllLines(citiesPath, Encoding.UTF8))
+            {
+                string[] p = line.Split('\t');
+                if (p.Length < 15 || p[7] == "PPLX" || p[7] == "PPLH") continue;   // части города, исторические
+                long pop;
+                if (!long.TryParse(p[14], out pop)) continue;
+                bool near = Array.IndexOf(NearCountries, p[8]) >= 0;
+                if (pop >= WorldMinPopulation || (near && pop >= NearMinPopulation)) picked.Add(p);
+            }
+            picked.Sort((a, b) => long.Parse(b[14]).CompareTo(long.Parse(a[14])));
+            Console.WriteLine("Городов: " + picked.Count + ", запрашиваю русские названия…");
+
+            string[] lines = new string[picked.Count];
+            int next = -1, failed = 0;
+            System.Threading.Thread[] workers = new System.Threading.Thread[6];
+            for (int w = 0; w < workers.Length; w++)
+            {
+                workers[w] = new System.Threading.Thread(delegate()
+                {
+                    int i;
+                    while ((i = System.Threading.Interlocked.Increment(ref next)) < picked.Count)
+                    {
+                        string[] p = picked[i];
+                        City ru = null;
+                        for (int attempt = 0; attempt < 3 && ru == null; attempt++)
+                        {
+                            try { ru = OpenMeteo.ParseCity(Http.Download(OpenMeteo.CityUrl(int.Parse(p[0]), "ru")), "ru"); }
+                            catch { System.Threading.Thread.Sleep(1000); }
+                        }
+                        string en = countryEn.ContainsKey(p[8]) ? countryEn[p[8]] : "";
+                        if (ru == null) System.Threading.Interlocked.Increment(ref failed);
+                        lines[i] = string.Join("|", new string[] { p[0], p[4], p[5], p[14], Clean(p[1]), Clean(en),
+                            Clean(ru != null ? ru.Name : p[1]), Clean(ru != null ? ru.Country : en) });
+                    }
+                });
+                workers[w].Start();
+            }
+            foreach (System.Threading.Thread t in workers) t.Join();
+
+            List<string> output = new List<string>();
+            output.Add("# Крупные города для подсказок при опечатках: номер GeoNames|широта|долгота|население|название|страна (англ.)|название|страна (рус.)");
+            output.Add("# Данные GeoNames (geonames.org) и Open-Meteo, лицензия CC BY 4.0. Пересоздать: WeatherWidget.Tools.exe cities …");
+            output.AddRange(lines);
+            File.WriteAllLines(outPath, output.ToArray(), new UTF8Encoding(false));
+            Console.WriteLine("Готово: " + outPath + (failed > 0 ? " (без русского названия: " + failed + ")" : ""));
+            return failed > picked.Count / 20 ? 1 : 0;
+        }
+
+        static string Clean(string s) { return (s ?? "").Replace("|", " ").Trim(); }
 
         // ---------- Иконка ----------
 

@@ -26,7 +26,7 @@ namespace WeatherWidget
             Id = id;
         }
 
-        static string GuessLang(string s)
+        public static string GuessLang(string s)
         {
             foreach (char ch in s)
                 if (ch >= 'А' && ch <= 'я' || ch == 'Ё' || ch == 'ё') return "ru";

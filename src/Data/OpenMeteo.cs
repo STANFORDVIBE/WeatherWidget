@@ -10,6 +10,8 @@ namespace WeatherWidget
     {
         public City City;
         public string Label;    // «Портленд, Орегон, США»
+        public long Population; // 0 — неизвестно
+        public int Typos;       // > 0 — подсказка при опечатке (CitySuggest), а не ответ сервера
     }
 
     // Источник данных — Open-Meteo (https://open-meteo.com), бесплатно и без ключа.
@@ -148,6 +150,8 @@ namespace WeatherWidget
                 GeoResult g = new GeoResult();
                 g.City = c;
                 g.Label = c.Name;
+                long pop;
+                if (long.TryParse(Str(r, "population"), out pop)) g.Population = pop;
                 if (region != "" && region != c.Name) g.Label += ", " + region;
                 if (c.Country != "") g.Label += ", " + c.Country;
                 list.Add(g);

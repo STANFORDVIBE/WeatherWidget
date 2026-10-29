@@ -272,6 +272,7 @@ namespace WeatherWidget
             if (dynamic) { dynamic = false; dynItem.Checked = false; dynTimer.Stop(); }
             SaveSettings();
             Fetch(home);
+            TranslateCities();   // нашли по-русски при английском интерфейсе — название переведётся
         }
 
         void SetDynamic(bool on)

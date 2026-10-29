@@ -55,6 +55,7 @@ namespace WeatherWidget.Tests
             Run("Прозрачность фона", Transparency);
             Run("Английский язык", English);
             Run("Названия своих городов при смене языка", CityNamesTranslate);
+            Run("Подсказки при опечатках в поиске города", Typos);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -790,6 +791,70 @@ namespace WeatherWidget.Tests
             Eq("en", s.Custom.Items[1].Lang, "язык названия своего города сохраняется");
             Eq(2, s.Custom.Count, "городов не прибавилось");
             Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        static GeoResult Geo(string name, string country, double lat, double lon, long population)
+        {
+            GeoResult g = new GeoResult();
+            g.City = new City(name, country, lat, lon);
+            g.Label = name + ", " + country;
+            g.Population = population;
+            return g;
+        }
+
+        static void Typos()
+        {
+            Eq(1, CitySuggest.Distance("sidney", "sydney"), "одна замена");
+            Eq(1, CitySuggest.Distance("londno", "london"), "перестановка соседних букв — одна правка");
+            Eq(1, CitySuggest.Distance("londn", "london"), "пропущенная буква");
+            Eq(3, CitySuggest.Distance("", "abc"), "пустая строка");
+            Eq("санкт петербург", CitySuggest.Normalize(" Санкт-Петербург "), "регистр, дефис, пробелы");
+            Eq("орел", CitySuggest.Normalize("Орёл"), "ё = е");
+            Eq("йошкар ола", CitySuggest.Normalize("Йошкар-Ола"), "й не превращается в и");
+            Eq("malmo", CitySuggest.Normalize("Malmö"), "без диакритики");
+
+            Check(KnownCities.All.Count > 2500, "встроенный список городов загружен (" + KnownCities.All.Count + ")");
+            Check(KnownCities.All.Exists(c => c.Id == 524901 && c.NameRu == "Москва" && c.NameEn == "Moscow"), "Москва есть на обоих языках");
+
+            List<GeoResult> g = CitySuggest.Find("Sidney", "en", 5);
+            Eq("Sydney, Australia", g.Count > 0 ? g[0].Label : "", "Sidney → Сидней в Австралии");
+            Eq(1, g[0].Typos, "одна опечатка");
+            g = CitySuggest.Find("Londn", "ru", 5);
+            Eq("Лондон", g.Count > 0 ? g[0].City.Name : "", "Londn → Лондон, название на языке интерфейса");
+            Eq(2643743, g[0].City.Id, "номер GeoNames — для перевода при смене языка");
+            Eq("ru", g[0].City.Lang, "язык названия");
+            g = CitySuggest.Find("Barselona", "en", 5);
+            Eq("Barcelona, Spain", g.Count > 0 ? g[0].Label : "", "из двух Барселон первая — крупнее");
+            g = CitySuggest.Find("Санкт-Питербург", "ru", 5);
+            Eq("Санкт-Петербург", g.Count > 0 ? g[0].City.Name : "", "опечатка по-русски");
+            g = CitySuggest.Find("Сидней", "en", 5);
+            Eq("Sydney", g.Count > 0 ? g[0].City.Name : "", "по-русски при английском интерфейсе");
+            g = CitySuggest.Find("Новосибирс", "ru", 5);
+            Check(g.Count > 0 && g[0].City.Name == "Новосибирск" && g[0].Typos == 0, "недописанное название — без опечаток");
+            Eq(0, CitySuggest.Find("Sid", "en", 5).Count, "короткий запрос — без подсказок");
+            Eq(0, CitySuggest.Find("Qwxzvbnm", "en", 5).Count, "ничего похожего");
+
+            // смешивание с ответом сервера
+            List<GeoResult> sidneys = new List<GeoResult> { Geo("Sidney", "United States", 40.28, -84.15, 20858), Geo("Sidney", "United States", 47.71, -104.15, 6346) };
+            List<GeoResult> m = CitySuggest.Merge(sidneys, CitySuggest.Find("Sidney", "en", 5), 8);
+            Eq("Sydney", m[0].City.Name, "подсказка крупнее найденного — первой");
+            Eq("Sidney", m[1].City.Name, "дальше — ответ сервера");
+            List<GeoResult> london = new List<GeoResult> { Geo("London", "United Kingdom", 51.50853, -0.12574, 8961989) };
+            m = CitySuggest.Merge(london, CitySuggest.Find("Londn", "en", 5), 8);
+            Eq("London", m[0].City.Name, "сервер нашёл крупный город — он первый");
+            Eq(1, m.FindAll(x => x.City.SamePlace(london[0].City)).Count, "без повторов");
+            m = CitySuggest.Merge(new List<GeoResult>(), CitySuggest.Find("Barselona", "en", 5), 8);
+            Check(m.Count > 0 && m[0].City.Name == "Barcelona", "сервер ничего не нашёл — подсказки");
+            m = CitySuggest.Merge(null, CitySuggest.Find("Barselona", "en", 5), 8);
+            Check(m != null && m[0].City.Name == "Barcelona", "нет связи — подсказки всё равно есть");
+            Check(CitySuggest.Merge(null, new List<GeoResult>(), 8) == null, "нет связи и подсказок — «нет связи»");
+            Eq(8, CitySuggest.Merge(london, CitySuggest.Find("Londn", "en", 5), 1).Count + 7, "не больше max строк");
+            Eq(8961989L, OpenMeteo.ParseSearch("{\"results\":[{\"id\":2643743,\"name\":\"London\",\"latitude\":51.5,\"longitude\":-0.12,\"population\":8961989}]}", "en")[0].Population, "население из ответа сервера");
+
+            using (WeatherForm f = new WeatherForm(TempFile()))
+            using (CityPicker p = new CityPicker(f))
+            using (Bitmap b = p.RenderPreview("Sidney", CitySuggest.Merge(sidneys, CitySuggest.Find("Sidney", "en", 5), 8)))
+                Check(b.Height > 150, "панель с подсказкой рисуется");
         }
 
         static void Transparency()

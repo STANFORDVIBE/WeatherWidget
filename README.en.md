@@ -18,6 +18,8 @@ A single `.exe` with no installation: runs on any Windows 10/11 using the built-
 - **Hourly and 3-day forecast** — expands with a small button next to the time:
   half a day in 2-hour steps with precipitation chance, plus the next 3 days.
 - **Any city in the world** — on first launch the widget asks you to pick a city and opens the search.
+  Search forgives typos: for "Sidney" it suggests Sydney, Australia first, for "Barselona" — Barcelona
+  (using a built-in list of ~2800 large cities, works offline too).
   Chosen cities are remembered in the menu (up to 10, extra ones removed with a cross) — no preset list.
 - **Dynamic weather** — 35 world cities in turn every 45 seconds, in random order,
   with a smooth transition; the city's local time is shown.
@@ -74,11 +76,13 @@ src/
     CustomCities.cs            your cities
     Lang.cs                    UI language: texts in pairs L.T("рус", "eng")
     CityNames.cs               your cities' names in another language
+    CitySuggest.cs             typo suggestions: Damerau–Levenshtein distance
   Data/
     WeatherService.cs          where to get weather: Open-Meteo → MET Norway → cache
     OpenMeteo.cs               main source: weather and city search
     MetNo.cs                   backup source MET Norway
     WeatherCache.cs            latest data for each city
+    KnownCities.cs             built-in list of large cities (assets\cities.txt)
     Http.cs                    HTTPS downloads
     SafeFile.cs                writing files without leaving a "half" file
     Settings.cs                settings (text file)
@@ -95,6 +99,7 @@ src/
 tests/                       tests and sample server responses
 tools/                       icon and README image generation
 assets/app.ico               program icon
+assets/cities.txt            ~2800 large cities in two languages — embedded into the exe
 ```
 
 ## How it works
@@ -132,7 +137,10 @@ assets/app.ico               program icon
 - [MET Norway](https://api.met.no) (Norwegian Meteorological Institute) — backup weather source.
   Free, keyless; the app identifies itself in the User-Agent header as the
   [terms](https://api.met.no/doc/TermsOfService) require, and only calls it when Open-Meteo is unavailable.
-- [GeoNames](https://www.geonames.org) — city names and coordinates in search (via Open-Meteo).
+- [GeoNames](https://www.geonames.org) — city names and coordinates in search (via Open-Meteo)
+  and the built-in list of large cities for typo suggestions. The list is regenerated with
+  `bin\WeatherWidget.Tools.exe cities cities15000.txt countryInfo.txt assets\cities.txt`
+  from the [GeoNames dumps](https://download.geonames.org/export/dump/); Russian names come from Open-Meteo.
 
 All this data is distributed under the
 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license.
