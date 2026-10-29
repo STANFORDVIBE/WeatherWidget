@@ -54,6 +54,7 @@ namespace WeatherWidget.Tests
             Run("Подсказка в стиле виджета", Tooltip);
             Run("Прозрачность фона", Transparency);
             Run("Английский язык", English);
+            Run("Названия своих городов при смене языка", CityNamesTranslate);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -710,6 +711,7 @@ namespace WeatherWidget.Tests
                 File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\n", Encoding.UTF8);
                 using (WeatherForm f = new WeatherForm(path))
                 {
+                    f.NamesDownload = delegate(string url) { throw new System.Net.WebException("нет сети"); };
                     Eq("Weather", f.Text, "без выбора в меню — язык Windows (здесь английский)");
                     f.SetLanguage("ru");
                     Check(!L.English, "переключение на русский");
@@ -721,6 +723,72 @@ namespace WeatherWidget.Tests
                     Check(!L.English, "при запуске берётся язык из настроек");
             }
             finally { L.Use("ru"); }
+            Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        const string OmskSearchRu = "{\"results\":[{\"id\":1496153,\"name\":\"Омск\",\"latitude\":54.99244,\"longitude\":73.36859,\"country\":\"Россия\"}," +
+            "{\"id\":1496150,\"name\":\"Омский\",\"latitude\":55.10402,\"longitude\":73.34691,\"country\":\"Россия\"}]}";
+        const string OmskEn = "{\"id\":1496153,\"name\":\"Omsk\",\"latitude\":54.99244,\"longitude\":73.36859,\"country\":\"Russia\"}";
+
+        // Сервер для перевода Омска: поиск по-русски и город по номеру по-английски
+        static string OmskServer(string url)
+        {
+            if (url.Contains("/v1/search") && url.Contains("language=ru")) return OmskSearchRu;
+            if (url.Contains("/v1/get?id=1496153&language=en")) return OmskEn;
+            throw new System.Net.WebException("неожиданный запрос: " + url);
+        }
+
+        static void CityNamesTranslate()
+        {
+            Func<string, string> offline = delegate(string url) { throw new System.Net.WebException("нет сети"); };
+            City omsk = new City("Омск", "Россия", 54.99244, 73.36859);
+            Eq("ru", omsk.Lang, "язык названия угадывается по буквам");
+            Eq("en", new City("Omsk", "Russia", 0, 0).Lang, "латиница — английский");
+            Check(CityNames.Translate(omsk, "ru", offline) == omsk, "язык тот же — без запросов");
+
+            City london = CityNames.Translate(new City("Лондон", "Британия", 51.50853, -0.12574), "en", offline);
+            Eq("London, United Kingdom", london.MenuLabel, "город из встроенного списка — без сети");
+            Eq(51.50853, london.Lat, "координаты прежние (кэш погоды не теряется)");
+
+            City t = CityNames.Translate(omsk, "en", OmskServer);
+            Eq("Omsk", t != null ? t.Name : null, "поиск по-русски, затем название по номеру GeoNames");
+            Eq("Russia", t.Country, "страна по-английски");
+            Eq("en", t.Lang, "язык названия");
+            Eq(1496153, t.Id, "номер GeoNames запоминается");
+            Eq(54.99244, t.Lat, "координаты прежние");
+
+            City known = new City("Омск", "Россия", 54.99244, 73.36859, "ru", 1496153);
+            Eq("Omsk", CityNames.Translate(known, "en", delegate(string url)
+            {
+                if (url.Contains("/v1/search")) throw new System.Net.WebException("поиск не нужен");
+                return OmskServer(url);
+            }).Name, "номер известен — сразу по номеру");
+
+            Check(CityNames.Translate(omsk, "en", offline) == null, "нет сети — null, попробовать позже");
+            City none = CityNames.Translate(new City("Деревня", "Россия", 10, 10), "en", delegate(string url) { return "{}"; });
+            Check(none != null && none.Name == "Деревня" && none.Lang == "en", "перевода нет — название прежнее, больше не спрашиваем");
+
+            Eq(1496153, OpenMeteo.ParseSearch(OmskSearchRu, "ru")[0].City.Id, "номер GeoNames из поиска");
+            Check(OpenMeteo.CityUrl(1496153, "en").EndsWith("/v1/get?id=1496153&language=en"), "запрос города по номеру");
+
+            // свой город и выбранный город заменяются, порядок и настройки сохраняются
+            string path = TempFile();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.99244\nlon=73.36859\n" +
+                "fav=Омск|Россия|54.99244|73.36859\nfav=Лондон|Британия|51.50853|-0.12574\n", Encoding.UTF8);
+            using (WeatherForm f = new WeatherForm(path))
+            {
+                f.ApplyTranslations(new List<City[]> { new City[] { f.Custom.Items[0], t }, new City[] { f.Custom.Items[1], london } });
+                Eq("Omsk", f.Home.Name, "выбранный город переведён");
+                Eq("Omsk", f.Custom.Items[0].Name, "свой город переведён, порядок прежний");
+                Eq("London", f.Custom.Items[1].Name, "второй свой город");
+            }
+            Settings s = Settings.Load(path);
+            Eq("Omsk", s.Home.Name, "сохранено в настройки");
+            Eq("en", s.Home.Lang, "язык названия выбранного города сохраняется");
+            Eq(1496153, s.Custom.Items[0].Id, "номер GeoNames сохраняется");
+            Eq("en", s.Custom.Items[1].Lang, "язык названия своего города сохраняется");
+            Eq(2, s.Custom.Count, "городов не прибавилось");
             Directory.Delete(Path.GetDirectoryName(path), true);
         }
 

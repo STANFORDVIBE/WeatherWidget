@@ -72,6 +72,7 @@ namespace WeatherWidget
             {
                 if (dynamic) { rotation.Restart(); dynTimer.Start(); Fetch(rotation.Next()); }
                 else Fetch(home);
+                TranslateCities();   // язык сменили, когда не было связи, — перевести сейчас
             };
             // город ещё не выбран — сразу предложить выбрать
             Shown += delegate { if (home == null && !dynamic) ShowCityMenu(); };
@@ -163,6 +164,55 @@ namespace WeatherWidget
             rotation = new CityRotation(Cities.World, new Random());
             if (dynamic) { rotation.Restart(); dynTimer.Stop(); dynTimer.Start(); Fetch(rotation.Next()); }
             else if (target != null) { error = null; Fetch(target); }   // описание погоды и ошибки — на новом языке
+            TranslateCities();
+        }
+
+        bool translating;
+        internal Func<string, string> NamesDownload = Http.Download;   // тесты подменяют сеть
+
+        // Свои города (и выбранный) — с названиями на языке интерфейса. Названия берутся с сервера
+        // в фоне; без связи остаются прежними и переводятся позже — при запуске или когда вернётся сеть.
+        void TranslateCities()
+        {
+            if (translating) return;
+            string lang = L.Code;
+            List<City> todo = new List<City>();
+            foreach (City c in custom.Items) if (c.Lang != lang) todo.Add(c);
+            if (home != null && home.Lang != lang && !custom.Contains(home)) todo.Add(home);
+            if (todo.Count == 0) return;
+            translating = true;
+            Func<string, string> download = NamesDownload;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                List<City[]> done = new List<City[]>();   // пары: было — стало
+                foreach (City c in todo)
+                {
+                    City t = CityNames.Translate(c, lang, download);
+                    if (t != null) done.Add(new City[] { c, t });
+                }
+                SafeInvoke(delegate
+                {
+                    translating = false;
+                    if (lang == L.Code) ApplyTranslations(done);
+                    else TranslateCities();   // пока переводили, язык сменили ещё раз
+                });
+            });
+        }
+
+        internal void ApplyTranslations(List<City[]> done)
+        {
+            if (done.Count == 0) return;
+            bool refetch = false;
+            foreach (City[] p in done)
+            {
+                custom.Replace(p[0], p[1]);
+                if (p[0].Same(home)) home = p[1];
+                if (data != null && p[0].Same(data.City)) data.City = p[1];
+                // загрузка, начатая со старым названием, будет отброшена (target уже другой) — запросить заново
+                if (p[0].Same(target)) { target = p[1]; refetch = true; }
+            }
+            SaveSettings();
+            if (refetch) Fetch(target);
         }
 
         void StartTimers()
@@ -188,7 +238,11 @@ namespace WeatherWidget
         void OnNetworkChanged(object sender, NetworkAvailabilityEventArgs e)
         {
             if (!e.IsAvailable) return;
-            SafeInvoke(delegate { if (data == null || data.Stale || error != null) Fetch(target); });
+            SafeInvoke(delegate
+            {
+                if (data == null || data.Stale || error != null) Fetch(target);
+                TranslateCities();
+            });
         }
 
         void ShowAbout()

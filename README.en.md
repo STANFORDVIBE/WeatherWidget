@@ -73,6 +73,7 @@ src/
     CityRotation.cs            order of "dynamic weather" cities
     CustomCities.cs            your cities
     Lang.cs                    UI language: texts in pairs L.T("рус", "eng")
+    CityNames.cs               your cities' names in another language
   Data/
     WeatherService.cs          where to get weather: Open-Meteo → MET Norway → cache
     OpenMeteo.cs               main source: weather and city search
@@ -116,7 +117,10 @@ assets/app.ico               program icon
   On startup the cache is shown instantly while fresh data loads.
 - **Language.** Russian or English; by default the Windows UI language (Russian for Russian Windows,
   English for everything else). The choice from the menu is saved in the settings (`lang=ru|en`).
-  Cities you have already saved keep the name in the language they were found in.
+  Your saved cities are translated in the background when the language changes: the city is looked up
+  in the language of its name, then its name in the new language is fetched by GeoNames id
+  (so "Омск" becomes "Omsk", not "Omskiy"). Offline, names stay as they are and get translated
+  on the next launch or when the network is back.
 - **Settings** live in `%APPDATA%\WeatherWidget\settings.txt` (`key=value` format),
   the weather cache — in `%APPDATA%\WeatherWidget\cache\`.
   Autostart is an entry in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, no admin rights needed.

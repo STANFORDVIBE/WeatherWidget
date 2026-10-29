@@ -36,9 +36,10 @@ namespace WeatherWidget
             try
             {
                 if (!File.Exists(path)) return s;
-                string name = null, country = "";
+                string name = null, country = "", cityLang = null;
                 double lat = double.NaN, lon = double.NaN;
                 int? x = null, y = null;
+                int cityId = 0;
                 foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
                 {
                     int eq = line.IndexOf('=');
@@ -51,6 +52,8 @@ namespace WeatherWidget
                     {
                         case "city": name = v; break;
                         case "country": country = v; break;
+                        case "citylang": cityLang = v; break;
+                        case "cityid": int.TryParse(v, out cityId); break;
                         case "lat": if (TryDouble(v, out d)) lat = d; break;
                         case "lon": if (TryDouble(v, out d)) lon = d; break;
                         case "x": if (int.TryParse(v, out n)) x = n; break;
@@ -73,7 +76,7 @@ namespace WeatherWidget
                 // город без координат (самые старые настройки) не восстановить — тогда виджет попросит выбрать город
                 if (name != null && !double.IsNaN(lat) && !double.IsNaN(lon))
                 {
-                    s.Home = new City(name, country, lat, lon);
+                    s.Home = new City(name, country, lat, lon, cityLang, cityId);
                     s.Custom.AddIfMissing(s.Home);   // выбранный город всегда есть в списке
                 }
             }
@@ -93,6 +96,8 @@ namespace WeatherWidget
                     lines.Add("country=" + Home.Country);
                     lines.Add("lat=" + Home.Lat.ToString(CultureInfo.InvariantCulture));
                     lines.Add("lon=" + Home.Lon.ToString(CultureInfo.InvariantCulture));
+                    lines.Add("citylang=" + Home.Lang);
+                    if (Home.Id != 0) lines.Add("cityid=" + Home.Id);
                 }
                 if (Position.HasValue)
                 {
@@ -106,20 +111,22 @@ namespace WeatherWidget
                 if (Lang != null) lines.Add("lang=" + Lang);
                 foreach (City c in Custom.Items)
                     lines.Add("fav=" + Clean(c.Name) + "|" + Clean(c.Country) + "|" +
-                        c.Lat.ToString(CultureInfo.InvariantCulture) + "|" + c.Lon.ToString(CultureInfo.InvariantCulture));
+                        c.Lat.ToString(CultureInfo.InvariantCulture) + "|" + c.Lon.ToString(CultureInfo.InvariantCulture) + "|" + c.Lang + "|" + c.Id);
                 SafeFile.WriteAllLines(path, lines.ToArray());   // сбой при записи не сотрёт город и свои города
                 return true;
             }
             catch { return false; }
         }
 
-        // свой город: Название|Страна|широта|долгота
+        // свой город: Название|Страна|широта|долгота|язык названия|номер GeoNames (последних двух в старых настройках нет)
         static City ParseFav(string v)
         {
             string[] p = v.Split('|');
             double lat, lon;
-            if (p.Length != 4 || !TryDouble(p[2], out lat) || !TryDouble(p[3], out lon)) return null;
-            return new City(p[0], p[1], lat, lon);
+            if ((p.Length != 4 && p.Length != 6) || !TryDouble(p[2], out lat) || !TryDouble(p[3], out lon)) return null;
+            int id = 0;
+            if (p.Length == 6) int.TryParse(p[5], out id);
+            return new City(p[0], p[1], lat, lon, p.Length == 6 ? p[4] : null, id);
         }
 
         static bool TryDouble(string v, out double d)

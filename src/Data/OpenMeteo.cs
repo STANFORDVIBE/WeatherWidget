@@ -28,9 +28,17 @@ namespace WeatherWidget
                 "&wind_speed_unit=ms&timezone=auto";
         }
 
-        public static string SearchUrl(string query)
+        public static string SearchUrl(string query) { return SearchUrl(query, L.Code); }
+
+        public static string SearchUrl(string query, string lang)
         {
-            return "https://geocoding-api.open-meteo.com/v1/search?count=8&language=" + L.Code + "&format=json&name=" + Uri.EscapeDataString(query);
+            return "https://geocoding-api.open-meteo.com/v1/search?count=8&language=" + lang + "&format=json&name=" + Uri.EscapeDataString(query);
+        }
+
+        // Один город по номеру GeoNames — так берётся его название на другом языке
+        public static string CityUrl(int id, string lang)
+        {
+            return "https://geocoding-api.open-meteo.com/v1/get?id=" + id + "&language=" + lang;
         }
 
         // Текущая погода, почасовой прогноз на сутки и прогноз на 3 дня (начиная с завтрашнего)
@@ -123,7 +131,10 @@ namespace WeatherWidget
         }
 
         // Результаты поиска города
-        public static List<GeoResult> ParseSearch(string json)
+        public static List<GeoResult> ParseSearch(string json) { return ParseSearch(json, L.Code); }
+
+        // lang — язык, на котором искали (на нём названия в ответе)
+        public static List<GeoResult> ParseSearch(string json, string lang)
         {
             List<GeoResult> list = new List<GeoResult>();
             Dictionary<string, object> root = (Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject(json);
@@ -131,16 +142,34 @@ namespace WeatherWidget
             foreach (object o in (object[])root["results"])
             {
                 Dictionary<string, object> r = (Dictionary<string, object>)o;
-                string name = Str(r, "name"), country = Str(r, "country"), region = Str(r, "admin1");
-                if (name == "" || !r.ContainsKey("latitude") || !r.ContainsKey("longitude")) continue;
+                City c = ToCity(r, lang);
+                if (c == null) continue;
+                string region = Str(r, "admin1");
                 GeoResult g = new GeoResult();
-                g.City = new City(name, country, Num(r["latitude"]), Num(r["longitude"]));
-                g.Label = name;
-                if (region != "" && region != name) g.Label += ", " + region;
-                if (country != "") g.Label += ", " + country;
+                g.City = c;
+                g.Label = c.Name;
+                if (region != "" && region != c.Name) g.Label += ", " + region;
+                if (c.Country != "") g.Label += ", " + c.Country;
                 list.Add(g);
             }
             return list;
+        }
+
+        // Ответ на запрос CityUrl
+        public static City ParseCity(string json, string lang)
+        {
+            City c = ToCity((Dictionary<string, object>)new JavaScriptSerializer().DeserializeObject(json), lang);
+            if (c == null) throw new FormatException("Open-Meteo: город не найден");
+            return c;
+        }
+
+        static City ToCity(Dictionary<string, object> r, string lang)
+        {
+            string name = Str(r, "name");
+            if (name == "" || !r.ContainsKey("latitude") || !r.ContainsKey("longitude")) return null;
+            int id;
+            int.TryParse(Str(r, "id"), out id);
+            return new City(name, Str(r, "country"), Num(r["latitude"]), Num(r["longitude"]), lang, id);
         }
 
         static double Num(object o) { return Convert.ToDouble(o, CultureInfo.InvariantCulture); }

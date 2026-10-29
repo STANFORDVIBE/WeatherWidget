@@ -1,3 +1,5 @@
+using System;
+
 namespace WeatherWidget
 {
     // Встроенный список городов. Предустановленных городов для выбора нет:
@@ -48,6 +50,17 @@ namespace WeatherWidget
             new object[] { "Мумбаи", "Индия", "Mumbai", "India", 19.0760, 72.8777 },
             new object[] { "Ханой", "Вьетнам", "Hanoi", "Vietnam", 21.0278, 105.8342 }
         };
+
+        // Встроенный город в том же месте — с названием на языке lang; null — такого нет
+        public static City Builtin(City c, string lang)
+        {
+            foreach (object[] r in Data)
+                if (Math.Abs((double)r[4] - c.Lat) < 0.05 && Math.Abs((double)r[5] - c.Lon) < 0.05)
+                    return lang == "en"
+                        ? new City((string)r[2], (string)r[3], c.Lat, c.Lon, "en", c.Id)
+                        : new City((string)r[0], (string)r[1], c.Lat, c.Lon, "ru", c.Id);
+            return null;
+        }
 
         static Cities()
         {

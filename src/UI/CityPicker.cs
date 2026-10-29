@@ -193,11 +193,11 @@ namespace WeatherWidget
         {
             string q = query.Trim();
             int seq = ++searchSeq;
-            string url = OpenMeteo.SearchUrl(q);
+            string lang = L.Code, url = OpenMeteo.SearchUrl(q, lang);
             ThreadPool.QueueUserWorkItem(delegate
             {
                 List<GeoResult> found = null;
-                try { found = OpenMeteo.ParseSearch(Http.Download(url)); }
+                try { found = OpenMeteo.ParseSearch(Http.Download(url), lang); }
                 catch { }
                 try
                 {

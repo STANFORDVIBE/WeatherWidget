@@ -32,5 +32,12 @@ namespace WeatherWidget
         public bool Contains(City c) { return items.Exists(x => x.Same(c)); }
 
         public void Remove(City c) { items.RemoveAll(x => x.Same(c)); }
+
+        // Заменить город на его же с другим названием (смена языка), место в списке не меняется
+        public void Replace(City old, City now)
+        {
+            int i = items.FindIndex(x => x.Same(old));
+            if (i >= 0) items[i] = now;
+        }
     }
 }
