@@ -21,19 +21,24 @@ namespace WeatherWidget
         // refresh — обновить текущий город, nextCity — следующий город «динамической погоды»,
         // networkBack — сеть вернулась
         public RefreshSchedule(Action<MethodInvoker> invoke, Action refresh, Action nextCity, Action networkBack)
+            : this(invoke, refresh, nextCity, networkBack, RefreshMinutes * 60 * 1000, DynamicSeconds * 1000, OfflineRetryMinutes * 60 * 1000) { }
+
+        // Интервалы в миллисекундах — тесты задают короткие
+        public RefreshSchedule(Action<MethodInvoker> invoke, Action refresh, Action nextCity, Action networkBack,
+            int refreshMs, int dynamicMs, int retryMs)
         {
             this.invoke = invoke;
             this.refresh = refresh;
             this.networkBack = networkBack;
 
-            refreshTimer.Interval = RefreshMinutes * 60 * 1000;
+            refreshTimer.Interval = refreshMs;
             refreshTimer.Tick += delegate { refresh(); };
             refreshTimer.Start();
 
-            dynTimer.Interval = DynamicSeconds * 1000;
+            dynTimer.Interval = dynamicMs;
             dynTimer.Tick += delegate { nextCity(); };
 
-            retryTimer.Interval = OfflineRetryMinutes * 60 * 1000;
+            retryTimer.Interval = retryMs;
             retryTimer.Tick += delegate { retryTimer.Stop(); refresh(); };
 
             NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
@@ -52,22 +57,34 @@ namespace WeatherWidget
             if (needed) retryTimer.Start();
         }
 
-        // компьютер проснулся — погода могла устареть на время сна
+        public bool Disposed { get; private set; }
+
         void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
-            if (e.Mode != PowerModes.Resume) return;
-            // сеть после сна поднимается не сразу: не вышло — повторит retryTimer или OnNetworkChanged
-            invoke(delegate { refreshTimer.Stop(); refreshTimer.Start(); refresh(); });
+            if (e.Mode == PowerModes.Resume) Resumed();
         }
 
-        // сеть вернулась — обновить сразу, не дожидаясь таймера
         void OnNetworkChanged(object sender, NetworkAvailabilityEventArgs e)
         {
-            if (e.IsAvailable) invoke(delegate { networkBack(); });
+            NetworkChanged(e.IsAvailable);
+        }
+
+        // Компьютер проснулся — погода могла устареть на время сна. Отсчёт до планового обновления — заново.
+        // Сеть после сна поднимается не сразу: не вышло — повторит retryTimer или NetworkChanged.
+        internal void Resumed()
+        {
+            invoke(delegate { if (Disposed) return; refreshTimer.Stop(); refreshTimer.Start(); refresh(); });
+        }
+
+        // Сеть вернулась — обновить сразу, не дожидаясь таймера
+        internal void NetworkChanged(bool available)
+        {
+            if (available) invoke(delegate { if (!Disposed) networkBack(); });
         }
 
         public void Dispose()
         {
+            Disposed = true;
             NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             refreshTimer.Dispose();

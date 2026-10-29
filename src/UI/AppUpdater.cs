@@ -16,6 +16,13 @@ namespace WeatherWidget
         UpdateInfo available;
         bool installing;
 
+        // тесты подменяют сеть, exe и окна сообщений
+        internal Func<string, string> Download = Http.Download;
+        internal Func<string, byte[]> DownloadBytes = Http.DownloadBytes;
+        internal string ExePath = Application.ExecutablePath;
+        internal Func<string, string, MessageBoxButtons, MessageBoxIcon, DialogResult> Ask = MessageBox.Show;
+        internal Action<string> Open = OpenUrl;
+
         public AppUpdater(Action<MethodInvoker> invoke, Action changed, Action restart, string logPath)
         {
             this.invoke = invoke;
@@ -40,7 +47,7 @@ namespace WeatherWidget
             ThreadPool.QueueUserWorkItem(delegate
             {
                 string json = null;
-                try { json = Http.Download(Updates.LatestUrl(Updates.Repo)); }
+                try { json = Download(Updates.LatestUrl(Updates.Repo)); }
                 catch (Exception e) { ErrorLog.Note(logPath, "GitHub, проверка обновлений: " + e.GetType().Name + ": " + e.Message, DateTime.Now); }
                 UpdateInfo u = null;
                 try { if (json != null) u = Updates.Newer(json, Program.Version); } catch { }
@@ -48,12 +55,12 @@ namespace WeatherWidget
                 {
                     if (u != null) Show(u);
                     if (!manual) return;
-                    if (u != null) { if (u.CanInstall && !installing) AskInstall(u); else if (!u.CanInstall) OpenUrl(u.Url); }
+                    if (u != null) { if (u.CanInstall && !installing) AskInstall(u); else if (!u.CanInstall) Open(u.Url); }
                     else if (json == null)
-                        MessageBox.Show(L.T("Не удалось проверить обновления — нет связи с GitHub.", "Couldn't check for updates — GitHub is unreachable."),
+                        Ask(L.T("Не удалось проверить обновления — нет связи с GitHub.", "Couldn't check for updates — GitHub is unreachable."),
                             L.T("Обновления", "Updates"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     else
-                        MessageBox.Show(L.T("У вас последняя версия: ", "You have the latest version: ") + Program.Version,
+                        Ask(L.T("У вас последняя версия: ", "You have the latest version: ") + Program.Version,
                             L.T("Обновления", "Updates"), MessageBoxButtons.OK, MessageBoxIcon.Information);
                 });
             });
@@ -69,7 +76,7 @@ namespace WeatherWidget
 
         void AskInstall(UpdateInfo u)
         {
-            if (MessageBox.Show(L.T("Вышла версия ", "Version ") + u.Version + L.T(". Обновить сейчас? Виджет перезапустится.", " is out. Update now? The widget will restart."),
+            if (Ask(L.T("Вышла версия ", "Version ") + u.Version + L.T(". Обновить сейчас? Виджет перезапустится.", " is out. Update now? The widget will restart."),
                     L.T("Обновления", "Updates"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                 Install(u);
         }
@@ -80,14 +87,14 @@ namespace WeatherWidget
             if (installing) return;
             installing = true;
             invoke(delegate { changed(); });   // «Загрузка обновления…»
-            string exe = Application.ExecutablePath;
+            string exe = ExePath;
             ThreadPool.QueueUserWorkItem(delegate
             {
                 Exception fail = null;
                 try
                 {
-                    byte[] zip = Http.DownloadBytes(u.ZipUrl);
-                    string sha = Http.Download(u.ShaUrl);
+                    byte[] zip = DownloadBytes(u.ZipUrl);
+                    string sha = Download(u.ShaUrl);
                     Updates.Install(exe, Updates.ExtractExe(zip, sha), u.Version);
                 }
                 catch (Exception e) { fail = e; }
@@ -101,10 +108,10 @@ namespace WeatherWidget
                     }
                     ErrorLog.Write(logPath, fail, DateTime.Now);
                     changed();
-                    if (MessageBox.Show(L.T("Не удалось обновиться: ", "Couldn't update: ") + fail.Message +
+                    if (Ask(L.T("Не удалось обновиться: ", "Couldn't update: ") + fail.Message +
                             L.T("\n\nОткрыть страницу релиза, чтобы скачать вручную?", "\n\nOpen the release page to download it manually?"),
                             L.T("Обновления", "Updates"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
-                        OpenUrl(u.Url);
+                        Open(u.Url);
                 });
             });
         }

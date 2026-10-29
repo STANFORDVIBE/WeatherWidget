@@ -41,6 +41,7 @@ namespace WeatherWidget
         internal City Home { get { return home; } }
         internal bool Dynamic { get { return dynamic; } }
         internal CustomCities Custom { get { return custom; } }
+        internal RefreshSchedule Schedule { get { return schedule; } }   // для тестов
 
         public WeatherForm() : this(Settings.DefaultPath) { }
 

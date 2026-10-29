@@ -35,11 +35,21 @@ namespace WeatherWidget
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             base.OnFormClosed(e);
-            schedule.Dispose();
-            updater.Dispose();
             if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }   // иначе значок висит до наведения мыши
             surface.Dispose();
             tip.Dispose();
+        }
+
+        // Таймеры и подписки на события Windows — здесь, а не в OnFormClosed: окно освобождают
+        // и не закрывая (тесты), а подписка на статическое событие держала бы его в памяти навсегда
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (schedule != null) schedule.Dispose();
+                if (updater != null) updater.Dispose();
+            }
+            base.Dispose(disposing);
         }
 
         void UpdateScale()

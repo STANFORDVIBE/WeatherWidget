@@ -65,6 +65,10 @@ namespace WeatherWidget.Tests
             Run("Установка обновления", UpdateInstall);
             Run("Журнал ошибок", ErrorLogFile);
             Run("Окно: масштаб сохраняется без масштаба экрана", ScaleSaved);
+            Run("Поиск города: сервер и подсказки", CitySearchFind);
+            Run("Расписание обновлений погоды", Schedule);
+            Run("Обновление программы из меню", Updater);
+            Run("Окно освобождает таймеры и подписки", FormDisposesSchedule);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -1200,6 +1204,184 @@ namespace WeatherWidget.Tests
             Check(!l.Position.HasValue, "только x без y — положение не задано");
             Check(!l.Scale.HasValue, "неверный масштаб пропущен");
             Eq(0, l.Custom.Count, "неполная запись своего города пропущена");
+            Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        // ---------- поиск, расписание, обновления ----------
+
+        static void CitySearchFind()
+        {
+            Eq("ru", CitySearch.QueryLang("Сидней", "en"), "кириллица — ищем по-русски");
+            Eq("en", CitySearch.QueryLang("Berlin", "en"), "латиница — на языке интерфейса");
+            Eq("ru", CitySearch.QueryLang("Berlin", "ru"), "латиница при русском интерфейсе");
+
+            string asked = null;
+            List<GeoResult> r = CitySearch.Find("  Берлин ", "ru", delegate(string url) { asked = url; return Fixture("search.json"); });
+            Check(asked != null && asked.Contains("language=ru") && asked.EndsWith("name=" + Uri.EscapeDataString("Берлин")), "запрос без пробелов по краям, по-русски");
+            // порядок с подсказками проверяет Typos; здесь — что ответ сервера попал в результат
+            Check(r != null && r.Exists(g => g.Label == "Берлин, Германия" && g.Typos == 0), "ответ сервера");
+
+            Func<string, string> offline = delegate(string url) { throw new System.Net.WebException("нет связи"); };
+            r = CitySearch.Find("Londn", "ru", offline);
+            Check(r != null && r.Count > 0 && r[0].City.Name == "Лондон" && r[0].Typos > 0, "без связи — подсказки при опечатках");
+            Check(CitySearch.Find("Ыыыыыщщщ", "ru", offline) == null, "без связи и без подсказок — null («Нет связи»)");
+            r = CitySearch.Find("Ыыыыыщщщ", "ru", delegate(string url) { return Fixture("search-empty.json"); });
+            Check(r != null && r.Count == 0, "сервер ничего не нашёл — пустой список («Ничего не найдено»)");
+        }
+
+        // Ждать, прокачивая сообщения (таймеры WinForms срабатывают только так), пока cond не станет true
+        static bool PumpUntil(Func<bool> cond, int ms)
+        {
+            DateTime end = DateTime.UtcNow.AddMilliseconds(ms);
+            while (!cond())
+            {
+                if (DateTime.UtcNow > end) return false;
+                System.Windows.Forms.Application.DoEvents();
+                System.Threading.Thread.Sleep(5);
+            }
+            return true;
+        }
+
+        static void Schedule()
+        {
+            int refreshes = 0, cities = 0, networks = 0;
+            Action<System.Windows.Forms.MethodInvoker> now = delegate(System.Windows.Forms.MethodInvoker m) { m(); };
+            using (RefreshSchedule s = new RefreshSchedule(now, delegate { refreshes++; }, delegate { cities++; }, delegate { networks++; },
+                60000, 60, 80))
+            {
+                s.RetryLater(true);
+                Check(PumpUntil(delegate { return refreshes == 1; }, 2000), "нет связи — повтор через интервал");
+                PumpUntil(delegate { return false; }, 300);
+                Eq(1, refreshes, "повтор — один раз, а не каждые 80 мс");
+
+                s.RetryLater(true);
+                s.RetryLater(false);
+                PumpUntil(delegate { return false; }, 300);
+                Eq(1, refreshes, "данные пришли — повтор отменён");
+
+                s.StartDynamic();
+                Check(PumpUntil(delegate { return cities >= 2; }, 2000), "«динамическая погода» — город за городом");
+                s.StopDynamic();
+                int stopped = cities;
+                PumpUntil(delegate { return false; }, 300);
+                Eq(stopped, cities, "выключили — города больше не меняются");
+
+                s.Resumed();
+                Eq(2, refreshes, "проснулся — обновить сразу");
+                s.NetworkChanged(false);
+                Eq(0, networks, "сеть пропала — ничего не делать");
+                s.NetworkChanged(true);
+                Eq(1, networks, "сеть вернулась");
+
+                s.RetryLater(true);
+                s.StartDynamic();
+                s.Dispose();
+                Check(s.Disposed, "освобождён");
+                PumpUntil(delegate { return false; }, 300);
+                Check(refreshes == 2 && cities == stopped, "после Dispose таймеры не срабатывают");
+                s.Resumed();
+                s.NetworkChanged(true);
+                Check(refreshes == 2 && networks == 1, "и события Windows — тоже");
+            }
+
+            int ticks = 0;
+            using (RefreshSchedule s = new RefreshSchedule(now, delegate { ticks++; }, delegate { }, delegate { }, 60, 60000, 60000))
+                Check(PumpUntil(delegate { return ticks >= 2; }, 2000), "плановое обновление — по таймеру");
+        }
+
+        static void Updater()
+        {
+            string dir = Path.GetDirectoryName(TempFile());
+            Directory.CreateDirectory(dir);
+            string log = Path.Combine(dir, "error.log");
+            string exePath = Path.Combine(dir, "WeatherWidget.exe");
+            File.WriteAllText(exePath, "старая версия");
+            byte[] exe = File.ReadAllBytes(typeof(Updates).Assembly.Location);
+            byte[] zip;
+            using (MemoryStream m = new MemoryStream())
+            {
+                using (System.IO.Compression.ZipArchive z = new System.IO.Compression.ZipArchive(m, System.IO.Compression.ZipArchiveMode.Create, true))
+                using (Stream st = z.CreateEntry("WeatherWidget.exe").Open()) st.Write(exe, 0, exe.Length);
+                zip = m.ToArray();
+            }
+            string sha;
+            using (System.Security.Cryptography.SHA256 h = System.Security.Cryptography.SHA256.Create())
+                sha = BitConverter.ToString(h.ComputeHash(zip)).Replace("-", "").ToLowerInvariant();
+
+            string release = "{\"tag_name\":\"v99.0.0\",\"html_url\":\"https://x/r\",\"assets\":[" +
+                "{\"name\":\"WeatherWidget-99.0.0.zip\",\"browser_download_url\":\"https://x/z.zip\"}," +
+                "{\"name\":\"WeatherWidget-99.0.0.zip.sha256\",\"browser_download_url\":\"https://x/z.sha256\"}]}";
+            bool online = true;
+            int changed = 0, restarts = 0;
+            List<string> asked = new List<string>(), opened = new List<string>();
+            // ответы из фоновых потоков — сразу, но по одному (как в потоке окна)
+            Action<System.Windows.Forms.MethodInvoker> now = delegate(System.Windows.Forms.MethodInvoker m) { lock (asked) m(); };
+            ErrorLog.Reset();
+            using (AppUpdater u = new AppUpdater(now, delegate { changed++; }, delegate { restarts++; }, log))
+            {
+                u.Download = delegate(string url)
+                {
+                    if (!online) throw new System.Net.WebException("нет связи");
+                    return url.EndsWith(".sha256") ? sha + "  WeatherWidget.zip" : release;
+                };
+                u.DownloadBytes = delegate(string url) { return zip; };
+                u.ExePath = exePath;
+                u.Ask = delegate(string text, string caption, System.Windows.Forms.MessageBoxButtons b, System.Windows.Forms.MessageBoxIcon i)
+                {
+                    asked.Add(text);
+                    return System.Windows.Forms.DialogResult.No;
+                };
+                u.Open = delegate(string url) { opened.Add(url); };
+
+                u.Check(false);
+                Check(PumpUntil(delegate { lock (asked) return u.Available != null; }, 3000), "новая версия найдена");
+                Eq("99.0.0", u.Available != null ? u.Available.Version : null, "номер версии");
+                Eq(1, changed, "пункт меню перестроен");
+                Eq(0, asked.Count, "автоматическая проверка ничего не спрашивает");
+                u.Show(u.Available);
+                Eq(1, changed, "та же версия — меню не перестраивается");
+
+                u.Check(true);
+                Check(PumpUntil(delegate { lock (asked) return asked.Count == 1; }, 3000) && asked[0].Contains("99.0.0"), "из меню — предложить обновиться");
+
+                online = false;
+                u.Check(true);
+                Check(PumpUntil(delegate { lock (asked) return asked.Count == 2; }, 3000) && asked[1].Contains("GitHub"), "без связи — сказать об этом");
+                Check(File.Exists(log) && File.ReadAllText(log).Contains("GitHub, проверка обновлений: WebException: нет связи"), "сбой проверки — в журнале");
+
+                // установка: та же версия, что у этой сборки, иначе Updates.Install откажется
+                online = true;
+                UpdateInfo same = new UpdateInfo();
+                same.Version = WeatherWidget.Program.Version;
+                same.ZipUrl = "https://x/z.zip";
+                same.ShaUrl = "https://x/z.sha256";
+                same.Url = "https://x/r";
+                u.Install(same);
+                Check(PumpUntil(delegate { lock (asked) return restarts == 1; }, 5000), "установлено — перезапуск");
+                Eq(exe.Length, (int)new FileInfo(exePath).Length, "новый exe на месте");
+                Check(!u.Installing, "загрузка закончилась");
+
+                // архив не сходится с суммой — exe не трогаем, предлагаем скачать вручную
+                File.WriteAllText(exePath, "старая версия");
+                sha = new string('0', 64);
+                int before = asked.Count;
+                u.Install(same);
+                Check(PumpUntil(delegate { lock (asked) return asked.Count == before + 1; }, 5000) && asked[before].Contains("Не удалось обновиться"), "сбой установки — сообщение");
+                Eq("старая версия", File.ReadAllText(exePath), "exe не тронут");
+                Eq(1, restarts, "без перезапуска");
+                Check(File.ReadAllText(log).Contains("InvalidDataException"), "причина — в журнале");
+            }
+            ErrorLog.Reset();
+            Directory.Delete(dir, true);
+        }
+
+        static void FormDisposesSchedule()
+        {
+            string path = TempFile();
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            RefreshSchedule s;
+            using (WeatherForm f = new WeatherForm(path)) s = f.Schedule;
+            Check(s != null && s.Disposed, "окно освободили, не закрывая, — расписание тоже");
             Directory.Delete(Path.GetDirectoryName(path), true);
         }
     }

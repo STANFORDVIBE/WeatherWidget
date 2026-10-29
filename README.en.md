@@ -103,6 +103,7 @@ src/
     Units.cs                   units: °C and m/s or °F and mph
     CityNames.cs               your cities' names in another language
     CitySuggest.cs             typo suggestions: Damerau–Levenshtein distance
+    CitySearch.cs              city search: server results + typo suggestions
   Data/
     WeatherService.cs          where to get weather: Open-Meteo → MET Norway → cache
     OpenMeteo.cs               main source: weather and city search
@@ -122,7 +123,8 @@ src/
     WeatherForm.Rendering.cs   drawing the card and animation
     WeatherIcons.cs            vector weather icons
     LayeredSurface.cs          window with per-pixel transparency
-    CityPicker.cs              city panel (search, your cities)
+    CityPicker.cs              city panel: search, your cities, keyboard and mouse
+    CityPicker.Rendering.cs    drawing the city panel
     OpacityPanel.cs            transparency slider panel
     Dpi.cs                     display scale (DPI) of each monitor
     MenuRenderer.cs            menus in the widget style (right click, tray icon)
