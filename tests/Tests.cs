@@ -677,7 +677,9 @@ namespace WeatherWidget.Tests
                     f.Show();
                     System.Windows.Forms.Application.DoEvents();
                     Size want = new Size((int)Math.Round(240 * scale), (int)Math.Round(440 * scale));
-                    Eq(want, f.ClientSize, "размер окна при масштабе " + scale);
+                    // окно выше экрана Windows не даёт (на сервере CI экран 1024×768) — такой масштаб не проверить
+                    if (want.Height <= System.Windows.Forms.SystemInformation.MaxWindowTrackSize.Height)
+                        Eq(want, f.ClientSize, "размер окна при масштабе " + scale);
                     f.Hide();
                 }
                 Directory.Delete(Path.GetDirectoryName(path), true);
