@@ -1,6 +1,6 @@
 @echo off
 rem Builds, tests and packs a release: dist\WeatherWidget-<version>.zip (exe + README.txt)
-rem Usage: tools\make-release.bat 1.1.0   (the version must match Program.Version)
+rem Usage: tools\make-release.bat 1.2.0   (the version must match Program.Version)
 setlocal
 cd /d "%~dp0.."
 if "%~1"=="" (

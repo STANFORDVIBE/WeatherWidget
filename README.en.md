@@ -78,7 +78,7 @@ All you need is Windows with .NET Framework 4.x (included in Windows 10/11) — 
 build.bat                 :: build bin\WeatherWidget.exe
 test.bat                  :: build and run the tests
 tools\make-assets.bat     :: regenerate the icon and README images (Russian and English)
-tools\make-release.bat 1.1.0   :: build, test and pack dist\WeatherWidget-1.1.0.zip for a release
+tools\make-release.bat 1.2.0   :: build, test and pack dist\WeatherWidget-1.2.0.zip for a release
 ```
 
 The code is written in C# 5 — the version understood by the `csc.exe` compiler built into .NET Framework.

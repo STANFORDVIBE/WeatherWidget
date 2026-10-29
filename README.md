@@ -78,7 +78,7 @@ Windows может показать окно «Система Windows защит
 build.bat                 :: собрать bin\WeatherWidget.exe
 test.bat                  :: собрать и прогнать автотесты
 tools\make-assets.bat     :: пересоздать иконку и картинки для README (русские и английские)
-tools\make-release.bat 1.1.0   :: собрать, проверить и упаковать dist\WeatherWidget-1.1.0.zip для релиза
+tools\make-release.bat 1.2.0   :: собрать, проверить и упаковать dist\WeatherWidget-1.2.0.zip для релиза
 ```
 
 Код написан на C# 5 — эту версию понимает компилятор `csc.exe`, встроенный в .NET Framework.
