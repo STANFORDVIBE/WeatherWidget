@@ -26,15 +26,15 @@ namespace WeatherWidget
         bool loading;                      // идёт загрузка погоды для target
         bool dynamic;
         readonly CustomCities custom;
-        readonly CityRotation rotation = new CityRotation(Cities.World, new Random());
+        CityRotation rotation;             // города — на языке интерфейса, пересоздаётся при смене языка
+        string lang;                       // выбранный в меню язык; null — как в Windows
 
         readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer dynTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer retryTimer = new System.Windows.Forms.Timer();   // повтор, пока нет связи
-        readonly ContextMenuStrip menu = new ContextMenuStrip();
-        readonly ToolStripMenuItem dynItem = new ToolStripMenuItem("Динамическая погода");
-        readonly ToolStripMenuItem topMostItem = new ToolStripMenuItem("Поверх всех окон");
-        readonly ToolStripMenuItem autoStartItem = new ToolStripMenuItem("Запускать вместе с Windows");
+        // меню пересобирается при смене языка
+        ContextMenuStrip menu;
+        ToolStripMenuItem dynItem, topMostItem, autoStartItem;
 
         // для панели выбора города (CityPicker)
         internal City Home { get { return home; } }
@@ -48,7 +48,6 @@ namespace WeatherWidget
             this.settingsPath = settingsPath;
             WeatherCache cache = new WeatherCache(Path.Combine(Path.GetDirectoryName(settingsPath), "cache"));
             weather = new WeatherService(Http.Download, cache, 1500);
-            Text = "Погода";
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
@@ -62,6 +61,8 @@ namespace WeatherWidget
             Settings s = Settings.Load(settingsPath);
             custom = s.Custom;
             ApplySettings(s);
+            Text = L.T("Погода", "Weather");
+            rotation = new CityRotation(Cities.World, new Random());
 
             BuildMenus();
             StartTimers();
@@ -79,6 +80,9 @@ namespace WeatherWidget
         void ApplySettings(Settings s)
         {
             if (s.Home != null) home = s.Home;
+            // язык не выбран в меню — остаётся тот, что определили по Windows при запуске
+            lang = s.Lang;
+            if (lang != null) L.Use(lang);
             dynamic = s.Dynamic;
             if (s.Transparency.HasValue) bgTransparency = Math.Max(0, Math.Min(MaxTransparency, s.Transparency.Value));
             TopMost = s.TopMost;
@@ -106,29 +110,59 @@ namespace WeatherWidget
             s.Dynamic = dynamic;
             s.Scale = scale;
             s.Transparency = bgTransparency;
+            s.Lang = lang;
             foreach (City c in custom.Items) s.Custom.Remember(c);
             s.Save(settingsPath);
         }
 
         void BuildMenus()
         {
-            menu.Items.Add("Выбрать город…", null, delegate { ShowCityMenu(); });
+            ContextMenuStrip old = menu;
+            menu = new ContextMenuStrip();
+            menu.Items.Add(L.T("Выбрать город…", "Choose city…"), null, delegate { ShowCityMenu(); });
+            dynItem = new ToolStripMenuItem(L.T("Динамическая погода", "Dynamic weather"));
             dynItem.Checked = dynamic;
             dynItem.Click += delegate { SetDynamic(!dynamic); };
             menu.Items.Add(dynItem);
-            menu.Items.Add("Обновить", null, delegate { Fetch(target); });
+            menu.Items.Add(L.T("Обновить", "Refresh"), null, delegate { Fetch(target); });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Прозрачность…", null, delegate { ShowOpacityPanel(); });
+            menu.Items.Add(L.T("Прозрачность…", "Transparency…"), null, delegate { ShowOpacityPanel(); });
+            topMostItem = new ToolStripMenuItem(L.T("Поверх всех окон", "Always on top"));
             topMostItem.Checked = TopMost;
             topMostItem.Click += delegate { TopMost = !TopMost; topMostItem.Checked = TopMost; SaveSettings(); };
             menu.Items.Add(topMostItem);
+            autoStartItem = new ToolStripMenuItem(L.T("Запускать вместе с Windows", "Start with Windows"));
             autoStartItem.Checked = AutoStart.IsEnabled();
             autoStartItem.Click += delegate { AutoStart.Set(!autoStartItem.Checked); autoStartItem.Checked = AutoStart.IsEnabled(); };
             menu.Items.Add(autoStartItem);
+            // названия языков — на самих языках, чтобы их узнал тот, кто не читает текущий
+            ToolStripMenuItem langItem = new ToolStripMenuItem("Язык / Language");
+            ToolStripMenuItem ru = new ToolStripMenuItem("Русский", null, delegate { SetLanguage("ru"); });
+            ToolStripMenuItem en = new ToolStripMenuItem("English", null, delegate { SetLanguage("en"); });
+            ru.Checked = !L.English;
+            en.Checked = L.English;
+            langItem.DropDownItems.Add(ru);
+            langItem.DropDownItems.Add(en);
+            menu.Items.Add(langItem);
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("О программе", null, delegate { ShowAbout(); });
-            menu.Items.Add("Выход", null, delegate { Close(); });
+            menu.Items.Add(L.T("О программе", "About"), null, delegate { ShowAbout(); });
+            menu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
             ContextMenuStrip = menu;
+            if (old != null) old.Dispose();
+        }
+
+        // Сменить язык сразу, без перезапуска: меню, карточка и города «динамической погоды»
+        internal void SetLanguage(string code)
+        {
+            lang = code;
+            L.Use(code);
+            Text = L.T("Погода", "Weather");
+            SaveSettings();
+            // меню пересобираем после того, как закроется текущее (клик пришёл из него)
+            SafeInvoke(delegate { BuildMenus(); });
+            rotation = new CityRotation(Cities.World, new Random());
+            if (dynamic) { rotation.Restart(); dynTimer.Stop(); dynTimer.Start(); Fetch(rotation.Next()); }
+            else if (target != null) { error = null; Fetch(target); }   // описание погоды и ошибки — на новом языке
         }
 
         void StartTimers()
@@ -159,14 +193,20 @@ namespace WeatherWidget
 
         void ShowAbout()
         {
-            MessageBox.Show(
-                "Погода — виджет для рабочего стола\nВерсия " + Program.Version + "\n\n" +
-                "Данные:\n" +
-                "• Погода — Open-Meteo.com, резерв — MET Norway (api.met.no)\n" +
-                "• Названия городов — GeoNames.org (через поиск Open-Meteo)\n" +
-                "Все данные распространяются по лицензии CC BY 4.0.\n\n" +
-                "Лицензия программы: MIT",
-                "О программе", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(L.English
+                ? "Weather — a desktop widget\nVersion " + Program.Version + "\n\n" +
+                  "Data:\n" +
+                  "• Weather — Open-Meteo.com, backup — MET Norway (api.met.no)\n" +
+                  "• City names — GeoNames.org (via Open-Meteo search)\n" +
+                  "All data is licensed under CC BY 4.0.\n\n" +
+                  "Program license: MIT"
+                : "Погода — виджет для рабочего стола\nВерсия " + Program.Version + "\n\n" +
+                  "Данные:\n" +
+                  "• Погода — Open-Meteo.com, резерв — MET Norway (api.met.no)\n" +
+                  "• Названия городов — GeoNames.org (через поиск Open-Meteo)\n" +
+                  "Все данные распространяются по лицензии CC BY 4.0.\n\n" +
+                  "Лицензия программы: MIT",
+                L.T("О программе", "About"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         // ---------- Выбор города ----------
@@ -239,7 +279,7 @@ namespace WeatherWidget
                 data = d;
                 error = null;
             }
-            else if (data == null || !data.City.Same(c)) error = "Нет связи с сервером";   // показать нечего
+            else if (data == null || !data.City.Same(c)) error = L.T("Нет связи с сервером", "Can't reach the server");   // показать нечего
 
             // нет свежих данных — повторить через пару минут (в динамике и так скоро следующий город)
             retryTimer.Stop();

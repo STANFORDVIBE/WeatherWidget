@@ -132,13 +132,13 @@ namespace WeatherWidget
                 r.Removable = !c.Same(owner.Home);   // выбранный город удалить нельзя
                 rows.Add(r);
             }
-            status = rows.Count == 0 ? "Найдите свой город —\nначните вводить название" : null;
+            status = rows.Count == 0 ? L.T("Найдите свой город —\nначните вводить название", "Find your city —\nstart typing its name") : null;
         }
 
         void ShowResults(List<GeoResult> found)
         {
             rows = new List<Row>();
-            if (found == null) { status = "Нет связи с сервером"; return; }
+            if (found == null) { status = L.T("Нет связи с сервером", "Can't reach the server"); return; }
             foreach (GeoResult g in found)
             {
                 Row r = new Row();
@@ -149,7 +149,7 @@ namespace WeatherWidget
                 r.Current = !owner.Dynamic && g.City.Same(owner.Home);
                 rows.Add(r);
             }
-            status = rows.Count == 0 ? "Ничего не найдено" : null;
+            status = rows.Count == 0 ? L.T("Ничего не найдено", "Nothing found") : null;
             selected = rows.Count > 0 ? 0 : -1;   // Enter выберет первый результат
         }
 
@@ -183,7 +183,7 @@ namespace WeatherWidget
             else
             {
                 rows = new List<Row>();
-                status = "Поиск…";
+                status = L.T("Поиск…", "Searching…");
                 debounce.Start();
             }
             Relayout();
@@ -394,7 +394,7 @@ namespace WeatherWidget
             if (query == "")
             {
                 using (SolidBrush b = new SolidBrush(Color.FromArgb(120, 255, 255, 255)))
-                    g.DrawString("Поиск города", fSearch, b, tx, ty, typo);
+                    g.DrawString(L.T("Поиск города", "Search for a city"), fSearch, b, tx, ty, typo);
             }
             GraphicsState st = g.Save();
             g.SetClip(new RectangleF(tx - 1, box.Y, avail + 2, box.Height));

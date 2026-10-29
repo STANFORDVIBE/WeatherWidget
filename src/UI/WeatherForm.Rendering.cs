@@ -13,7 +13,7 @@ namespace WeatherWidget
         // Все анимации считаются от реального времени, а не от числа тиков таймера —
         // поэтому идут ровно, даже если таймер срабатывает неравномерно.
         const int TransMs = 600, ExpMs = 260;
-        public const int MaxTransparency = 80;   // дальше фон почти исчезает и белый текст не читается
+        public const int MaxTransparency = 100;   // 100 % — фон невидим, остаются только текст и анимация
 
         int bgTransparency = 5;         // прозрачность фона карточки, %; текст и анимация всегда непрозрачные
 
@@ -152,7 +152,9 @@ namespace WeatherWidget
             }
 
             // фон с настраиваемой прозрачностью; текст и анимация рисуются поверх непрозрачными
-            int bgAlpha = 255 * (100 - bgTransparency) / 100;
+            // не ниже 1: пиксели с нулевой альфой layered-окно пропускает насквозь,
+            // и при 100 % карточку нельзя было бы перетащить или открыть меню
+            int bgAlpha = Math.Max(1, 255 * (100 - bgTransparency) / 100);
             RectangleF gradRect = new RectangleF(0, -1, W, bh + 2);   // с запасом, чтобы градиент не «заворачивался» на краях
             using (GraphicsPath shape = Theme.RoundRect(new RectangleF(0, 0, W, bh), 22))
             {
@@ -204,14 +206,16 @@ namespace WeatherWidget
         void DrawContent(Graphics g, WeatherData d, float bh)
         {
             City shown = d != null ? d.City : target;
-            string cityLabel = (shown != null ? shown.Name : "Выберите город") + " ▾";
+            string cityLabel = (shown != null ? shown.Name : L.T("Выберите город", "Choose a city")) + " ▾";
             g.DrawString(cityLabel, fCity, Brushes.White, cityRect, cityFmt);
             float labelW = Math.Min(g.MeasureString(cityLabel, fCity, PointF.Empty, StringFormat.GenericTypographic).Width, cityRect.Width);
             cityHit = new Rectangle((int)(W / 2f - labelW / 2) - 6, cityRect.Y, (int)labelW + 12, cityRect.Height);   // текст по центру + небольшой запас
 
             if (d == null)
             {
-                string msg = error ?? (shown == null ? "Нажмите «Выберите город»\nи найдите свой город" : "Загрузка…");
+                string msg = error ?? (shown == null
+                    ? L.T("Нажмите «Выберите город»\nи найдите свой город", "Click “Choose a city”\nand find your city")
+                    : L.T("Загрузка…", "Loading…"));
                 g.DrawString(msg, fDesc, Brushes.White, new RectangleF(0, 0, W, bh), center);
                 return;
             }
@@ -240,7 +244,7 @@ namespace WeatherWidget
             {
                 if (slots.Count == 0)
                 {
-                    g.DrawString("почасовой прогноз появится после обновления", fSmall, dim, new RectangleF(0, fy, W, HoursH), center);
+                    g.DrawString(L.T("почасовой прогноз появится после обновления", "hourly forecast will appear after refresh"), fSmall, dim, new RectangleF(0, fy, W, HoursH), center);
                     return;
                 }
                 using (SolidBrush rain = new SolidBrush(Color.FromArgb(235, 175, 220, 255)))
@@ -287,7 +291,8 @@ namespace WeatherWidget
                 {
                     DayForecast day = days[i];
                     float x = W / 2f + (i - (days.Count - 1) / 2f) * 80;   // по центру, сколько бы дней ни было
-                    g.DrawString(day.Label, fDay, dim, new RectangleF(x - 40, fy + 8, 80, 18), center);
+                    string label = day.Date != DateTime.MinValue ? L.DayLabel(day.Date) : day.Label;   // язык мог смениться после загрузки
+                    g.DrawString(label, fDay, dim, new RectangleF(x - 40, fy + 8, 80, 18), center);
                     WeatherIcons.Draw(g, day.Sky, false, x, fy + 44, 0.36f, phase);
                     g.DrawString(Format.Deg(day.Max) + " / " + Format.Deg(day.Min), fDayTemp, Brushes.White,
                         new RectangleF(x - 40, fy + 70, 80, 20), center);
@@ -306,9 +311,9 @@ namespace WeatherWidget
         {
             string time = DateTime.UtcNow.AddSeconds(d.UtcOffset).ToString("HH:mm");   // время города, а не компьютера
             string s = error ??
-                (d.Stale && loading ? "обновление…"   // показан кэш, свежие данные уже грузятся
-               : d.Stale ? "нет связи · данные " + Format.Age(DateTime.UtcNow - d.FetchedUtc)
-               : (dynamic ? "динамическая погода · " : "местное время ") + time);
+                (d.Stale && loading ? L.T("обновление…", "updating…")   // показан кэш, свежие данные уже грузятся
+               : d.Stale ? L.T("нет связи · данные ", "offline · data from ") + Format.Age(DateTime.UtcNow - d.FetchedUtc)
+               : (dynamic ? L.T("динамическая погода · ", "dynamic weather · ") : L.T("местное время ", "local time ")) + time);
 
             const float bs = 14, gap = 6, cy = 231;   // текст и кнопка вместе — по центру
             StringFormat typo = StringFormat.GenericTypographic;

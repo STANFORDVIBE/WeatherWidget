@@ -13,6 +13,7 @@ if errorlevel 1 exit /b 1
 
 "%~dp0..\bin\WeatherWidget.Tools.exe" icon assets\app.ico || exit /b 1
 "%~dp0..\bin\WeatherWidget.Tools.exe" screenshots docs || exit /b 1
+"%~dp0..\bin\WeatherWidget.Tools.exe" screenshots docs en || exit /b 1
 
 rem rebuild the widget with the new icon
 call "%~dp0..\build.bat"

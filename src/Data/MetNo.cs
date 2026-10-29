@@ -11,7 +11,6 @@ namespace WeatherWidget
     static class MetNo
     {
         public const string Name = "MET Norway";
-        static readonly CultureInfo Ru = new CultureInfo("ru-RU");
 
         // MET Norway принимает не больше 4 знаков после запятой в координатах
         public static string ForecastUrl(City c)
@@ -89,7 +88,7 @@ namespace WeatherWidget
                 }
                 if (daySymbol == null) continue;   // нет данных на этот день
                 DayForecast f = new DayForecast();
-                f.Label = Ru.DateTimeFormat.GetAbbreviatedDayName(day.DayOfWeek) + ", " + day.Day;
+                f.Label = L.DayLabel(day);
                 f.Date = day;
                 f.Sky = WeatherCodes.ToSky(SymbolToWmo(daySymbol));
                 f.Max = max;

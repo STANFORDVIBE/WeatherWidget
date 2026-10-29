@@ -17,7 +17,6 @@ namespace WeatherWidget
     static class OpenMeteo
     {
         public const string Name = "Open-Meteo";
-        static readonly CultureInfo Ru = new CultureInfo("ru-RU");
 
         public static string ForecastUrl(City c)
         {
@@ -31,7 +30,7 @@ namespace WeatherWidget
 
         public static string SearchUrl(string query)
         {
-            return "https://geocoding-api.open-meteo.com/v1/search?count=8&language=ru&format=json&name=" + Uri.EscapeDataString(query);
+            return "https://geocoding-api.open-meteo.com/v1/search?count=8&language=" + L.Code + "&format=json&name=" + Uri.EscapeDataString(query);
         }
 
         // Текущая погода, почасовой прогноз на сутки и прогноз на 3 дня (начиная с завтрашнего)
@@ -66,7 +65,7 @@ namespace WeatherWidget
                     if (codes[i] == null || max[i] == null || min[i] == null) continue;
                     DateTime dt = DateTime.ParseExact((string)time[i], "yyyy-MM-dd", CultureInfo.InvariantCulture);
                     DayForecast f = new DayForecast();
-                    f.Label = Ru.DateTimeFormat.GetAbbreviatedDayName(dt.DayOfWeek) + ", " + dt.Day;
+                    f.Label = L.DayLabel(dt);
                     f.Date = dt;
                     f.Sky = WeatherCodes.ToSky((int)Num(codes[i]));
                     f.Max = Num(max[i]);

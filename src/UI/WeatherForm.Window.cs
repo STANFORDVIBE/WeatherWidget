@@ -187,9 +187,9 @@ namespace WeatherWidget
             HideTip();
             Point at = PointToScreen(new Point(e.X + 12, e.Y + 20));
             if (want == TipKind.City)
-                tip.ShowAt("", "Страна: " + (data.City.Country == "" ? "неизвестна" : data.City.Country), at);
+                tip.ShowAt("", L.T("Страна: ", "Country: ") + (data.City.Country == "" ? L.T("неизвестна", "unknown") : data.City.Country), at);
             else if (want == TipKind.Temp)
-                tip.ShowAt("Как ощущается", Advice.TipText(data) + Advice.SourceNote(data, DateTime.UtcNow), at);
+                tip.ShowAt(L.T("Как ощущается", "How it feels"), Advice.TipText(data) + Advice.SourceNote(data, DateTime.UtcNow), at);
             tipShown = want;
         }
 

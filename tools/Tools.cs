@@ -24,8 +24,9 @@ namespace WeatherWidget.Tools
         {
             Console.OutputEncoding = Encoding.UTF8;
             if (args.Length == 2 && args[0] == "icon") { MakeIcon(args[1]); return 0; }
-            if (args.Length == 2 && args[0] == "screenshots") { MakeScreenshots(args[1]); return 0; }
-            Console.WriteLine("Использование: WeatherWidget.Tools.exe icon <файл.ico> | screenshots <папка>");
+            if (args.Length == 2 && args[0] == "screenshots") { MakeScreenshots(args[1], "ru"); return 0; }
+            if (args.Length == 3 && args[0] == "screenshots") { MakeScreenshots(args[1], args[2]); return 0; }
+            Console.WriteLine("Использование: WeatherWidget.Tools.exe icon <файл.ico> | screenshots <папка> [ru|en]");
             return 1;
         }
 
@@ -122,28 +123,35 @@ namespace WeatherWidget.Tools
 
         // ---------- Картинки для README ----------
 
-        static void MakeScreenshots(string dir)
+        // ru — docs\preview.png и forecast.png, en — preview.en.png и forecast.en.png для README.en.md
+        static void MakeScreenshots(string dir, string lang)
         {
+            L.Use(lang);
+            string suffix = L.English ? ".en" : "";
             Directory.CreateDirectory(dir);
             string tempSettings = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tools", Guid.NewGuid().ToString("N"), "settings.txt");
             using (WeatherForm form = new WeatherForm(tempSettings))   // не трогает настройки пользователя
             {
                 // Ряд карточек с разной погодой
                 List<Bitmap> cards = new List<Bitmap>();
-                cards.Add(form.RenderPreview(Sample(Moscow, 18, 0, true, 10800), false, 30));
-                cards.Add(form.RenderPreview(Sample(Spb, 7, 3, true, 10800), false, 30));
-                cards.Add(form.RenderPreview(Sample(Cities.World[2], 11, 63, true, 0), false, 30));
-                cards.Add(form.RenderPreview(Sample(Khanty, -12, 73, true, 18000), false, 30));
-                cards.Add(form.RenderPreview(Sample(Omsk, -4, 0, false, 21600), false, 30));
-                SaveRow(cards, null, Path.Combine(dir, "preview.png"));
+                // для английской версии — города мира с английскими названиями
+                City[] row = L.English
+                    ? new City[] { Cities.World[0], Cities.World[1], Cities.World[2], Cities.World[24], Cities.World[12] }
+                    : new City[] { Moscow, Spb, Cities.World[2], Khanty, Omsk };
+                cards.Add(form.RenderPreview(Sample(row[0], 18, 0, true, L.English ? -25200 : 10800), false, 30));
+                cards.Add(form.RenderPreview(Sample(row[1], 7, 3, true, L.English ? -14400 : 10800), false, 30));
+                cards.Add(form.RenderPreview(Sample(row[2], 11, 63, true, 0), false, 30));
+                cards.Add(form.RenderPreview(Sample(row[3], -12, 73, true, L.English ? 3600 : 18000), false, 30));
+                cards.Add(form.RenderPreview(Sample(row[4], -4, 0, false, L.English ? 32400 : 21600), false, 30));
+                SaveRow(cards, null, Path.Combine(dir, "preview" + suffix + ".png"));
 
                 // Раскрытый прогноз и подсказка
-                WeatherData d = Sample(Moscow, 9, 2, true, 10800);
+                WeatherData d = Sample(L.English ? Cities.World[2] : Moscow, 9, 2, true, L.English ? 0 : 10800);
                 d.Feels = 6; d.Wind = 4.5; d.Humidity = 72;
                 Bitmap expanded = form.RenderPreview(d, true, 30);
                 Bitmap tip;
-                using (TipWindow tw = new TipWindow()) tip = tw.RenderPreview("Как ощущается", Advice.TipText(d));
-                SaveRow(new List<Bitmap> { expanded }, tip, Path.Combine(dir, "forecast.png"));
+                using (TipWindow tw = new TipWindow()) tip = tw.RenderPreview(L.T("Как ощущается", "How it feels"), Advice.TipText(d));
+                SaveRow(new List<Bitmap> { expanded }, tip, Path.Combine(dir, "forecast" + suffix + ".png"));
             }
             string tempDir = Path.GetDirectoryName(tempSettings);
             if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
@@ -165,13 +173,12 @@ namespace WeatherWidget.Tools
             // даты — от сегодняшнего дня: прошедшие дни виджет не показывает
             DateTime nowUtc = DateTime.UtcNow;
             DateTime today = d.Local(nowUtc).Date;
-            System.Globalization.CultureInfo ru = new System.Globalization.CultureInfo("ru-RU");
             int[] codes = { 3, 63, 0 };
             for (int i = 0; i < 3; i++)
             {
                 DayForecast f = new DayForecast();
                 f.Date = today.AddDays(i + 1);
-                f.Label = ru.DateTimeFormat.GetAbbreviatedDayName(f.Date.DayOfWeek) + ", " + f.Date.Day;
+                f.Label = L.DayLabel(f.Date);
                 f.Sky = WeatherCodes.ToSky(codes[i]);
                 f.Max = temp + 2 - i;
                 f.Min = temp - 5 - i;

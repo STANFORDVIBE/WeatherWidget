@@ -187,7 +187,7 @@ namespace WeatherWidget
 
             // заголовок и значение
             float x = Shadow + Pad, y = Shadow + Pad - 2;
-            g.DrawString("Прозрачность фона", fTitle, Brushes.White, x, y);
+            g.DrawString(L.T("Прозрачность фона", "Background transparency"), fTitle, Brushes.White, x, y);
             string val = Value + "%";
             SizeF vs = g.MeasureString(val, fTitle);
             using (SolidBrush accent = new SolidBrush(Theme.Accent))
@@ -213,8 +213,8 @@ namespace WeatherWidget
             // подписи краёв
             using (SolidBrush dim = new SolidBrush(Color.FromArgb(130, 255, 255, 255)))
             {
-                g.DrawString("непрозрачный", fHint, dim, TrackLeft - KnobR, cy + 13);
-                string right = "прозрачный";
+                g.DrawString(L.T("непрозрачный", "opaque"), fHint, dim, TrackLeft - KnobR, cy + 13);
+                string right = L.T("прозрачный", "transparent");
                 SizeF rs = g.MeasureString(right, fHint);
                 g.DrawString(right, fHint, dim, TrackRight + KnobR - rs.Width + 3, cy + 13);
             }

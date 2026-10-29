@@ -1,0 +1,143 @@
+**English** · [Русский](README.md)
+
+# Weather — a desktop widget for Windows
+
+A lightweight weather widget with vector animation, "what to wear" advice, and hourly and 3-day forecasts.
+A single `.exe` with no installation: runs on any Windows 10/11 using the built-in .NET Framework.
+
+![The widget in different weather](docs/preview.en.png)
+
+## Features
+
+- **Animated weather** — the sun with rotating rays, drifting clouds, rain, snow;
+  at night — the moon and twinkling stars. The background color changes with the weather.
+- **"Feels like" and what to wear** — hover over the temperature: the feels-like temperature,
+  wind and humidity in plain words, plus clothing advice ("a T-shirt is fine", "a hoodie", "a warm jacket"…).
+- **Umbrella by forecast, not by window** — the advice checks precipitation 12 hours ahead:
+  "Rain from 17:00 (80%) — take an umbrella", and if it's already raining — "rain until 16:00".
+- **Hourly and 3-day forecast** — expands with a small button next to the time:
+  half a day in 2-hour steps with precipitation chance, plus the next 3 days.
+- **Any city in the world** — on first launch the widget asks you to pick a city and opens the search.
+  Chosen cities are remembered in the menu (up to 10, extra ones removed with a cross) — no preset list.
+- **Dynamic weather** — 35 world cities in turn every 45 seconds, in random order,
+  with a smooth transition; the city's local time is shown.
+- **Transparent background** — a slider in the menu: the card background goes from opaque to fully transparent,
+  while text and animation stay crisp.
+- **Russian and English** — the default language follows Windows; switch it in the "Язык / Language" menu
+  instantly, without a restart: texts, advice, weekdays, city search and the "dynamic weather" cities.
+- **Neat window** — smooth edges, scale from 60 to 250% by dragging any corner,
+  tooltips that don't activate the window, position and all settings remembered.
+- **Works when the connection fails** — if the main source is unavailable, the weather comes from the backup
+  (MET Norway); without internet the widget shows the latest data marked "offline · data from 25 min ago"
+  and refreshes by itself as soon as the network is back.
+- **Light on the system** — ~1–2% of one CPU core, ~45 MB of memory.
+
+![Expanded forecast and tooltip](docs/forecast.en.png)
+
+## Controls
+
+| Action | What happens |
+|---|---|
+| Click the city name | city panel: search and your cities (click again, Esc or click outside — close; arrows and Enter — pick with the keyboard) |
+| Hover the city name | country |
+| Hover the temperature | feels like, wind, humidity, what to wear |
+| ⌄ button next to the time | expand / collapse the hourly and 3-day forecast |
+| Double-click the card | turn "Dynamic weather" on / off |
+| Drag the card | move the widget |
+| Card corner | resize |
+| Right click | menu: choose city, dynamic weather, refresh, transparency, always on top, start with Windows, language, about, exit |
+| Transparency… | background transparency slider; mouse wheel and arrows — 5% step, Esc or click outside — close |
+
+## Building
+
+All you need is Windows with .NET Framework 4.x (included in Windows 10/11) — nothing to install.
+
+```bat
+build.bat                 :: build bin\WeatherWidget.exe
+test.bat                  :: build and run the tests
+tools\make-assets.bat     :: regenerate the icon and README images (Russian and English)
+```
+
+The code is written in C# 5 — the version understood by the `csc.exe` compiler built into .NET Framework.
+Code comments are in Russian.
+
+## Project structure
+
+```
+src/
+  Program.cs                 entry point, version
+  Model/                     data: city, weather, built-in city lists
+  Logic/                     logic without UI — covered by tests
+    WeatherCodes.cs            WMO weather codes → sky type and description
+    Advice.cs                  feels like, wind, humidity, what to wear, upcoming precipitation
+    CityRotation.cs            order of "dynamic weather" cities
+    CustomCities.cs            your cities
+    Lang.cs                    UI language: texts in pairs L.T("рус", "eng")
+  Data/
+    WeatherService.cs          where to get weather: Open-Meteo → MET Norway → cache
+    OpenMeteo.cs               main source: weather and city search
+    MetNo.cs                   backup source MET Norway
+    WeatherCache.cs            latest data for each city
+    Http.cs                    HTTPS downloads
+    SafeFile.cs                writing files without leaving a "half" file
+    Settings.cs                settings (text file)
+    AutoStart.cs               starting with Windows
+  UI/
+    WeatherForm.cs             window: state, menu, timers, loading
+    WeatherForm.Window.cs      size, dragging, mouse, tooltips
+    WeatherForm.Rendering.cs   drawing the card and animation
+    WeatherIcons.cs            vector weather icons
+    LayeredSurface.cs          window with per-pixel transparency
+    CityPicker.cs              city panel (search, your cities)
+    OpacityPanel.cs            transparency slider panel
+    TipWindow.cs, Theme.cs, NativeMethods.cs
+tests/                       tests and sample server responses
+tools/                       icon and README image generation
+assets/app.ico               program icon
+```
+
+## How it works
+
+- **Transparency.** The window is a layered window: every frame is drawn into a 32-bit buffer with an alpha channel
+  and handed to Windows via `UpdateLayeredWindow`. That's why the edges are smooth and the area outside the card
+  is transparent and lets clicks through. Even at 100% the card background keeps a minimal alpha,
+  so the card can still be dragged and right-clicked.
+- **Smoothness.** All animations are computed from real time, not timer ticks.
+  At rest — 25 fps, during transitions — ~60. The window doesn't resize when the forecast expands —
+  the card is simply drawn further.
+- **Data.** Weather refreshes every 15 minutes. Source order:
+  1. **Open-Meteo** — two attempts;
+  2. **MET Norway** — if Open-Meteo didn't answer. Its response has no feels-like temperature or time zone:
+     feels-like is calculated with the Steadman formula (as Open-Meteo does), the time zone is the last known one
+     for the city, otherwise estimated from longitude;
+  3. **cache** — the latest data for the city, no older than 3 days, marked "offline · data from N min ago".
+
+  Without a connection the widget retries every 2 minutes, and immediately when Windows reports the network is back.
+  On startup the cache is shown instantly while fresh data loads.
+- **Language.** Russian or English; by default the Windows UI language (Russian for Russian Windows,
+  English for everything else). The choice from the menu is saved in the settings (`lang=ru|en`).
+  Cities you have already saved keep the name in the language they were found in.
+- **Settings** live in `%APPDATA%\WeatherWidget\settings.txt` (`key=value` format),
+  the weather cache — in `%APPDATA%\WeatherWidget\cache\`.
+  Autostart is an entry in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, no admin rights needed.
+
+## Data sources
+
+- [Open-Meteo](https://open-meteo.com) — main weather source and city search.
+  Free and keyless for non-commercial use.
+- [MET Norway](https://api.met.no) (Norwegian Meteorological Institute) — backup weather source.
+  Free, keyless; the app identifies itself in the User-Agent header as the
+  [terms](https://api.met.no/doc/TermsOfService) require, and only calls it when Open-Meteo is unavailable.
+- [GeoNames](https://www.geonames.org) — city names and coordinates in search (via Open-Meteo).
+
+All this data is distributed under the
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) license.
+
+## Possible improvements
+
+- Backup city search: currently search works only through Open-Meteo.
+- More backup sources with a free key (sign-up, limits): OpenWeatherMap, WeatherAPI.com.
+
+## License
+
+[MIT](LICENSE) — the code may be freely used, modified and distributed, keeping the author attribution.

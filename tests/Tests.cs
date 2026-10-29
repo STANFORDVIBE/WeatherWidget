@@ -22,6 +22,7 @@ namespace WeatherWidget.Tests
         static int Main()
         {
             Console.OutputEncoding = Encoding.UTF8;
+            L.Use("ru");   // тесты пишутся по-русски, английский проверяется отдельно
             fixtures = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\tests\fixtures"));
 
             Run("Коды погоды", WeatherCodesMap);
@@ -52,6 +53,7 @@ namespace WeatherWidget.Tests
             Run("Панель выбора города", Picker);
             Run("Подсказка в стиле виджета", Tooltip);
             Run("Прозрачность фона", Transparency);
+            Run("Английский язык", English);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -685,6 +687,43 @@ namespace WeatherWidget.Tests
             }
         }
 
+        static void English()
+        {
+            string path = TempFile();
+            L.Use("en");
+            try
+            {
+                Eq("Thunderstorm", WeatherCodes.Describe(95), "описание погоды");
+                Eq("Rain from 21:00 (80%) — take an umbrella.", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 61, 80), Now1830), "дождь впереди");
+                Eq("Snow from 21:00 (60%).", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 3, 73, 60), Now1830), "снег впереди");
+                Eq("Rain soon (70%) — take an umbrella.", Advice.PrecipNote(WithHours(Sky.Cloudy, 16, 0, 61, 70), Now1830), "дождь скоро");
+                Eq("Take an umbrella — rain until 20:00.", Advice.PrecipNote(WithHours(Sky.Rain, 16, 0, 61, 90, 1, 61, 90), Now1830), "идёт дождь");
+                Eq("25 min ago", Format.Age(TimeSpan.FromMinutes(25)), "давность");
+                Eq("Sun, 25", L.DayLabel(new DateTime(2026, 10, 25)), "подпись дня");
+                Check(Advice.TipText(OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"))).StartsWith("Feels like "), "подсказка");
+                Eq("London", Cities.World[2].Name, "города «динамической погоды»");
+                Eq(35, Cities.World.Length, "те же 35 городов");
+                Check(OpenMeteo.SearchUrl("Paris").Contains("language=en"), "поиск городов по-английски");
+                Eq("Mon, 26", OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json")).Days[0].Label, "дни прогноза по-английски");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\n", Encoding.UTF8);
+                using (WeatherForm f = new WeatherForm(path))
+                {
+                    Eq("Weather", f.Text, "без выбора в меню — язык Windows (здесь английский)");
+                    f.SetLanguage("ru");
+                    Check(!L.English, "переключение на русский");
+                    Eq("Погода", f.Text, "заголовок окна");
+                }
+                Eq("ru", Settings.Load(path).Lang, "выбор сохраняется в настройки");
+                L.Use("en");
+                using (WeatherForm f = new WeatherForm(path))
+                    Check(!L.English, "при запуске берётся язык из настроек");
+            }
+            finally { L.Use("ru"); }
+            Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
         static void Transparency()
         {
             string path = TempFile();
@@ -704,6 +743,8 @@ namespace WeatherWidget.Tests
                 }
                 f.BgTransparency = 200;
                 Eq(WeatherForm.MaxTransparency, f.BgTransparency, "не больше максимума");
+                using (Bitmap b = f.RenderPreview(d, false, 0))
+                    Eq(1, (int)b.GetPixel(14, 240).A, "при 100% фон невидим, но ловит клики");
                 f.BgTransparency = -5;
                 Eq(0, f.BgTransparency, "не меньше нуля");
                 using (Bitmap b = f.RenderPreview(d, false, 0))
