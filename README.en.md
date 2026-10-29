@@ -31,7 +31,7 @@ The source code is open — you can build the exe yourself (see "Building").
   Search forgives typos: for "Sidney" it suggests Sydney, Australia first, for "Barselona" — Barcelona
   (using a built-in list of ~2800 large cities, works offline too).
   Chosen cities are remembered in the menu (up to 10, extra ones removed with a cross) — no preset list.
-- **Dynamic weather** — 35 world cities in turn every 45 seconds, in random order,
+- **Dynamic weather** — 100 major world cities in turn every 45 seconds, in random order,
   with a smooth transition; the city's local time is shown.
 - **Transparent background** — a slider in the menu: the card background goes from opaque to fully transparent,
   while text and animation stay crisp.
@@ -43,8 +43,10 @@ The source code is open — you can build the exe yourself (see "Building").
 - **Works when the connection fails** — if the main source is unavailable, the weather comes from the backup
   (MET Norway); without internet the widget shows the latest data marked "offline · data from 25 min ago"
   and refreshes by itself as soon as the network is back.
-- **Tells you about new versions** — once a day it checks the latest release on GitHub; if there's a new one,
-  "Version … is available — download…" appears at the top of the menu. It never downloads or installs anything by itself.
+- **One-click updates** — once a day (or via "Check for updates" in the menu) it checks the latest release
+  on GitHub; if there's a new one, "Update to version …" appears at the top of the menu. A click downloads the release
+  archive, verifies its SHA-256 checksum and the program version, replaces the exe and restarts the widget —
+  settings are kept. Nothing is downloaded or installed without that click.
 - **Crisp at any display scale** — 125%, 150% and different scales on two monitors:
   the widget draws in real screen pixels instead of being stretched by Windows.
 - **Always easy to find** — a tray icon: a click brings the widget to the front, its menu has
@@ -66,7 +68,7 @@ The source code is open — you can build the exe yourself (see "Building").
 | Double-click the card | turn "Dynamic weather" on / off |
 | Drag the card | move the widget |
 | Card corner | resize |
-| Right click | menu: choose city, dynamic weather, refresh, transparency, always on top, start with Windows, language, units, about, exit |
+| Right click | menu: choose city, dynamic weather, refresh, transparency, always on top, start with Windows, language, units, check for updates, about, exit |
 | Tray icon | click — show the widget; right click — show, reset position, exit |
 | Transparency… | background transparency slider; mouse wheel and arrows — 5% step, Esc or click outside — close |
 

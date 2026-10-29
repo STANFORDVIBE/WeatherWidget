@@ -39,9 +39,10 @@ jobs:
           }
           Set-Content notes.md $notes -Encoding UTF8
           # релиз уже создан вручную — только заменить архив
+          # .sha256 — по нему виджет проверяет архив, прежде чем обновиться
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $zip --clobber
+            gh release upload $tag $zip "$zip.sha256" --clobber
           } else {
-            gh release create $tag $zip --title $version --notes-file notes.md
+            gh release create $tag $zip "$zip.sha256" --title $version --notes-file notes.md
           }

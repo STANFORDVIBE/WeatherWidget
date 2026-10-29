@@ -36,6 +36,7 @@ namespace WeatherWidget
         readonly System.Windows.Forms.Timer retryTimer = new System.Windows.Forms.Timer();   // повтор, пока нет связи
         readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer();  // новая версия на GitHub
         UpdateInfo update;                 // вышла новая версия; null — нет или ещё не проверяли
+        bool installing;                   // идёт загрузка обновления
         // меню пересобирается при смене языка
         ContextMenuStrip menu, trayMenu;
         ToolStripMenuItem dynItem, topMostItem, autoStartItem;
@@ -142,9 +143,18 @@ namespace WeatherWidget
             menu = new ContextMenuStrip();
             if (update != null)
             {
-                string url = update.Url;
-                ToolStripMenuItem upd = new ToolStripMenuItem(L.T("Доступна версия ", "Version ") + update.Version +
-                    L.T(" — скачать…", " is available — download…"), null, delegate { OpenUrl(url); });
+                UpdateInfo u = update;
+                ToolStripMenuItem upd;
+                if (installing)
+                {
+                    upd = new ToolStripMenuItem(L.T("Загрузка обновления…", "Downloading the update…"));
+                    upd.Enabled = false;
+                }
+                else if (u.CanInstall)
+                    upd = new ToolStripMenuItem(L.T("Обновить до версии ", "Update to version ") + u.Version, null, delegate { InstallUpdate(u); });
+                else   // в релизе нечем проверить архив — только открыть страницу
+                    upd = new ToolStripMenuItem(L.T("Доступна версия ", "Version ") + u.Version +
+                        L.T(" — скачать…", " is available — download…"), null, delegate { OpenUrl(u.Url); });
                 upd.Font = new Font(upd.Font, FontStyle.Bold);
                 menu.Items.Add(upd);
                 menu.Items.Add(new ToolStripSeparator());
@@ -183,6 +193,7 @@ namespace WeatherWidget
             unitsItem.DropDownItems.Add(imperial);
             menu.Items.Add(unitsItem);
             menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(L.T("Проверить обновления", "Check for updates"), null, delegate { CheckUpdates(true); });
             menu.Items.Add(L.T("О программе", "About"), null, delegate { ShowAbout(); });
             menu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
             ContextMenuStrip = menu;
@@ -317,7 +328,7 @@ namespace WeatherWidget
 
             // новая версия: через минуту после запуска (не мешать загрузке погоды), дальше раз в сутки
             updateTimer.Interval = 60 * 1000;
-            updateTimer.Tick += delegate { updateTimer.Interval = 24 * 60 * 60 * 1000; CheckUpdates(); };
+            updateTimer.Tick += delegate { updateTimer.Interval = 24 * 60 * 60 * 1000; CheckUpdates(false); };
             updateTimer.Start();
 
             // сеть вернулась — обновить сразу, не дожидаясь таймера
@@ -343,13 +354,79 @@ namespace WeatherWidget
             });
         }
 
-        void CheckUpdates()
+        // manual — из меню: сказать и когда новой версии нет, и когда проверить не удалось
+        void CheckUpdates(bool manual)
         {
             ThreadPool.QueueUserWorkItem(delegate
             {
-                UpdateInfo u = Updates.Check(Http.Download);
-                if (u != null) SafeInvoke(delegate { ShowUpdate(u); });
+                string json = null;
+                try { json = Http.Download(Updates.LatestUrl(Updates.Repo)); } catch { }
+                UpdateInfo u = null;
+                try { if (json != null) u = Updates.Newer(json, Program.Version); } catch { }
+                SafeInvoke(delegate
+                {
+                    if (u != null) ShowUpdate(u);
+                    if (!manual) return;
+                    if (u != null) { if (u.CanInstall && !installing) AskInstall(u); else if (!u.CanInstall) OpenUrl(u.Url); }
+                    else if (json == null)
+                        MessageBox.Show(L.T("Не удалось проверить обновления — нет связи с GitHub.", "Couldn't check for updates — GitHub is unreachable."),
+                            L.T("Обновления", "Updates"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    else
+                        MessageBox.Show(L.T("У вас последняя версия: ", "You have the latest version: ") + Program.Version,
+                            L.T("Обновления", "Updates"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+                });
             });
+        }
+
+        void AskInstall(UpdateInfo u)
+        {
+            if (MessageBox.Show(L.T("Вышла версия ", "Version ") + u.Version + L.T(". Обновить сейчас? Виджет перезапустится.", " is out. Update now? The widget will restart."),
+                    L.T("Обновления", "Updates"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                InstallUpdate(u);
+        }
+
+        // Скачать, проверить и подменить exe, затем перезапуститься новой версией
+        void InstallUpdate(UpdateInfo u)
+        {
+            if (installing) return;
+            installing = true;
+            SafeInvoke(delegate { BuildMenus(); });   // «Загрузка обновления…»
+            string exe = Application.ExecutablePath;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                Exception fail = null;
+                try
+                {
+                    byte[] zip = Http.DownloadBytes(u.ZipUrl);
+                    string sha = Http.Download(u.ShaUrl);
+                    Updates.Install(exe, Updates.ExtractExe(zip, sha), u.Version);
+                }
+                catch (Exception e) { fail = e; }
+                SafeInvoke(delegate
+                {
+                    installing = false;
+                    if (fail == null)
+                    {
+                        SaveSettings();
+                        try { Program.RestartUpdated(); Close(); return; }
+                        catch (Exception e) { fail = e; }
+                    }
+                    ErrorLog.Write(ErrorLog.DefaultPath, fail, DateTime.Now);
+                    BuildMenus();
+                    if (MessageBox.Show(L.T("Не удалось обновиться: ", "Couldn't update: ") + fail.Message +
+                            L.T("\n\nОткрыть страницу релиза, чтобы скачать вручную?", "\n\nOpen the release page to download it manually?"),
+                            L.T("Обновления", "Updates"), MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                        OpenUrl(u.Url);
+                });
+            });
+        }
+
+        // Первый запуск после обновления — сообщить у значка в трее
+        internal void ShowUpdated()
+        {
+            if (tray == null) return;
+            tray.ShowBalloonTip(5000, L.T("Погода", "Weather"), L.T("Виджет обновлён до версии ", "The widget was updated to version ") + Program.Version,
+                ToolTipIcon.Info);
         }
 
         // Пункт «Доступна версия …» первым в меню

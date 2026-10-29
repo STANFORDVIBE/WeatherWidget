@@ -59,6 +59,7 @@ namespace WeatherWidget.Tests
             Run("Подсказки при опечатках в поиске города", Typos);
             Run("Единицы: °F и mph", ImperialUnits);
             Run("Проверка обновлений", UpdateCheck);
+            Run("Установка обновления", UpdateInstall);
             Run("Журнал ошибок", ErrorLogFile);
             Run("Окно: масштаб сохраняется без масштаба экрана", ScaleSaved);
 
@@ -339,7 +340,7 @@ namespace WeatherWidget.Tests
 
         static void CityLists()
         {
-            Eq(35, Cities.World.Length, "городов «динамической погоды»");
+            Eq(100, Cities.World.Length, "городов «динамической погоды»");
             HashSet<string> names = new HashSet<string>();
             foreach (City c in Cities.World)
             {
@@ -752,7 +753,7 @@ namespace WeatherWidget.Tests
                 Eq("Sun, 25", L.DayLabel(new DateTime(2026, 10, 25)), "подпись дня");
                 Check(Advice.TipText(OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"))).StartsWith("Feels like "), "подсказка");
                 Eq("London", Cities.World[2].Name, "города «динамической погоды»");
-                Eq(35, Cities.World.Length, "те же 35 городов");
+                Eq(100, Cities.World.Length, "те же 100 городов");
                 Check(OpenMeteo.SearchUrl("Paris").Contains("language=en"), "поиск городов по-английски");
                 Eq("Mon, 26", OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json")).Days[0].Label, "дни прогноза по-английски");
 
@@ -961,10 +962,71 @@ namespace WeatherWidget.Tests
                 using (WeatherForm f = new WeatherForm(TempFile()))
                 {
                     f.ShowUpdate(u);
-                    Eq("Version 1.2.0 is available — download…", f.ContextMenuStrip.Items[0].Text, "первый пункт меню");
+                    Eq("Version 1.2.0 is available — download…", f.ContextMenuStrip.Items[0].Text, "без архива в релизе — только страница");
                 }
+                string withAssets = "{\"tag_name\":\"v1.3.0\",\"html_url\":\"https://x/r\",\"assets\":[" +
+                    "{\"name\":\"WeatherWidget-1.3.0.zip\",\"browser_download_url\":\"https://x/z.zip\"}," +
+                    "{\"name\":\"WeatherWidget-1.3.0.zip.sha256\",\"browser_download_url\":\"https://x/z.sha256\"}]}";
+                UpdateInfo a = Updates.Newer(withAssets, "1.2.0");
+                Check(a != null && a.CanInstall && a.ZipUrl == "https://x/z.zip" && a.ShaUrl == "https://x/z.sha256", "ссылки на архив и сумму");
+                using (WeatherForm f = new WeatherForm(TempFile()))
+                {
+                    f.ShowUpdate(a);
+                    Eq("Update to version 1.3.0", f.ContextMenuStrip.Items[0].Text, "обновить из меню");
+                }
+                Check(!Updates.Newer(withAssets.Replace(".sha256\"", ".txt\""), "1.2.0").CanInstall, "без суммы — не ставить");
             }
             finally { L.Use("ru"); }
+        }
+
+        // Установка обновления: проверка архива и подмена exe (на копиях во временной папке)
+        static void UpdateInstall()
+        {
+            byte[] exe = File.ReadAllBytes(typeof(Updates).Assembly.Location);   // настоящий bin\WeatherWidget.exe
+            byte[] zip;
+            using (MemoryStream m = new MemoryStream())
+            {
+                using (System.IO.Compression.ZipArchive z = new System.IO.Compression.ZipArchive(m, System.IO.Compression.ZipArchiveMode.Create, true))
+                {
+                    using (Stream s = z.CreateEntry("README.txt").Open()) s.WriteByte(65);
+                    using (Stream s = z.CreateEntry("WeatherWidget.exe").Open()) s.Write(exe, 0, exe.Length);
+                }
+                zip = m.ToArray();
+            }
+            string sha;
+            using (System.Security.Cryptography.SHA256 h = System.Security.Cryptography.SHA256.Create())
+                sha = BitConverter.ToString(h.ComputeHash(zip)).Replace("-", "").ToLowerInvariant();
+
+            byte[] got = Updates.ExtractExe(zip, sha.ToUpperInvariant() + "  WeatherWidget-1.2.0.zip\n");
+            Eq(exe.Length, got.Length, "exe из архива");
+            bool bad = false;
+            try { Updates.ExtractExe(zip, new string('0', 64)); } catch (InvalidDataException) { bad = true; }
+            Check(bad, "чужая сумма — отказ");
+            bad = false;
+            try { Updates.ExtractExe(zip, ""); } catch (InvalidDataException) { bad = true; }
+            Check(bad, "пустая сумма — отказ");
+
+            string dir = Path.GetDirectoryName(TempFile());
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "WeatherWidget.exe");
+            File.WriteAllText(path, "старая версия");
+
+            bad = false;
+            try { Updates.Install(path, exe, "9.9.0"); } catch (InvalidDataException) { bad = true; }
+            Check(bad && File.ReadAllText(path) == "старая версия", "не та версия — exe не тронут");
+            bad = false;
+            try { Updates.Install(path, new byte[] { 1, 2, 3 }, WeatherWidget.Program.Version); } catch (Exception) { bad = true; }
+            Check(bad && File.ReadAllText(path) == "старая версия", "не программа — exe не тронут");
+            Check(!File.Exists(path + ".new"), "временный файл убран");
+
+            Updates.Install(path, exe, WeatherWidget.Program.Version);
+            Eq(exe.Length, (int)new FileInfo(path).Length, "новый exe на месте");
+            string old = Path.Combine(dir, "WeatherWidget.old.exe");
+            Eq("старая версия", File.ReadAllText(old), "прежний — рядом до перезапуска");
+            Updates.Install(path, exe, WeatherWidget.Program.Version);   // второе обновление подряд — прошлый .old не мешает
+            Updates.CleanUp(path);
+            Check(!File.Exists(old) && File.Exists(path), "после перезапуска прежний удалён");
+            Directory.Delete(dir, true);
         }
 
         static void Transparency()

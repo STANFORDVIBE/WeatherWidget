@@ -1,5 +1,6 @@
 @echo off
 rem Builds, tests and packs a release: dist\WeatherWidget-<version>.zip (exe + README.txt)
+rem and its checksum dist\WeatherWidget-<version>.zip.sha256 - the widget checks it before updating itself
 rem Usage: tools\make-release.bat 1.2.0   (the version must match Program.Version)
 setlocal
 cd /d "%~dp0.."
@@ -26,4 +27,6 @@ powershell -NoProfile -Command "Compress-Archive -Path '%STAGE%\*' -DestinationP
 set "ERR=%ERRORLEVEL%"
 rmdir /s /q "%STAGE%"
 if not "%ERR%"=="0" exit /b 1
+powershell -NoProfile -Command "$h = (Get-FileHash '%OUT%' -Algorithm SHA256).Hash.ToLower(); [IO.File]::WriteAllText('%OUT%.sha256', $h + '  WeatherWidget-%~1.zip' + [char]10)"
+if errorlevel 1 exit /b 1
 echo OK: %OUT%

@@ -23,5 +23,21 @@ namespace WeatherWidget
             using (StreamReader r = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
                 return r.ReadToEnd();
         }
+
+        // Файл целиком (архив обновления): ждём дольше, переадресацию GitHub на хранилище проходим сами
+        public static byte[] DownloadBytes(string url)
+        {
+            HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
+            req.Timeout = 60000;
+            req.ReadWriteTimeout = 60000;
+            req.UserAgent = UserAgent;
+            using (WebResponse resp = req.GetResponse())
+            using (Stream s = resp.GetResponseStream())
+            using (MemoryStream m = new MemoryStream())
+            {
+                s.CopyTo(m);
+                return m.ToArray();
+            }
+        }
     }
 }

@@ -20,21 +20,38 @@ namespace WeatherWidget
 
         // имена — в пределах сеанса пользователя (Local\): у каждого пользователя Windows свой виджет
         const string MutexName = @"Local\WeatherWidget.Running", WakeName = @"Local\WeatherWidget.Show";
+        // с этим ключом виджет запускает сам себя после обновления
+        public const string UpdatedArg = "--updated";
 
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            bool updated = Array.IndexOf(args, UpdatedArg) >= 0;
             // Одна копия: два виджета писали бы в один settings.txt (например, автозапуск + запуск exe вручную).
             // Вторая копия только показывает первую и закрывается.
             bool first;
             using (Mutex running = new Mutex(true, MutexName, out first))
             {
+                // после обновления прежняя версия ещё закрывается — дождаться её, а не будить
+                if (!first && updated) first = Acquire(running, 15000);
                 if (!first) { WakeFirstCopy(); return; }
-                Run();
+                Run(updated);
             }
         }
 
-        static void Run()
+        static bool Acquire(Mutex m, int ms)
+        {
+            try { return m.WaitOne(ms); }
+            catch (AbandonedMutexException) { return true; }   // прежняя копия закрылась, не отпустив его, — теперь он наш
+        }
+
+        // Запустить новую версию после обновления; эта копия закрывается следом
+        public static void RestartUpdated()
+        {
+            System.Diagnostics.Process.Start(Application.ExecutablePath, UpdatedArg);
+        }
+
+        static void Run(bool updated)
         {
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; // TLS 1.2
             // по умолчанию .NET Framework держит не больше 2 соединений с сервером — остальные запросы
@@ -58,6 +75,8 @@ namespace WeatherWidget
             using (WeatherForm form = new WeatherForm())
             {
                 form.EnableTray();
+                Updates.CleanUp(Application.ExecutablePath);   // прежний exe, оставшийся после обновления
+                if (updated) form.Shown += delegate { form.ShowUpdated(); };
                 // вторая копия будит первую — показать виджет
                 Thread waiter = new Thread(delegate()
                 {
