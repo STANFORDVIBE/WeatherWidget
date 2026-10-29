@@ -58,6 +58,7 @@ namespace WeatherWidget.Tests
             Run("Названия своих городов при смене языка", CityNamesTranslate);
             Run("Подсказки при опечатках в поиске города", Typos);
             Run("Единицы: °F и mph", ImperialUnits);
+            Run("Проверка обновлений", UpdateCheck);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -895,6 +896,30 @@ namespace WeatherWidget.Tests
             finally { Units.Use("metric"); L.Use("ru"); }
             Eq("4.5 м/с", Units.Wind(4.5), "по-русски");
             Directory.Delete(Path.GetDirectoryName(path), true);
+        }
+
+        static void UpdateCheck()
+        {
+            string rel = "{\"tag_name\":\"v1.2.0\",\"html_url\":\"https://github.com/owner/weather/releases/tag/v1.2.0\"}";
+            UpdateInfo u = Updates.Newer(rel, "1.1.0");
+            Eq("1.2.0", u != null ? u.Version : null, "вышла 1.2.0 — новее 1.1.0");
+            Eq("https://github.com/owner/weather/releases/tag/v1.2.0", u.Url, "ссылка на страницу релиза");
+            Check(Updates.Newer(rel, "1.2.0") == null, "та же версия — не новее");
+            Check(Updates.Newer(rel, "1.10.0") == null, "1.10 новее 1.2 (сравнение чисел, а не строк)");
+            Check(Updates.Newer("{\"tag_name\":\"latest\"}", "1.1.0") == null, "непонятный тег — молчим");
+            Check(Updates.Newer("{\"message\":\"Not Found\"}", "1.1.0") == null, "релизов нет");
+            Check(Updates.LatestUrl("owner/weather") == "https://api.github.com/repos/owner/weather/releases/latest", "адрес API");
+
+            L.Use("en");
+            try
+            {
+                using (WeatherForm f = new WeatherForm(TempFile()))
+                {
+                    f.ShowUpdate(u);
+                    Eq("Version 1.2.0 is available — download…", f.ContextMenuStrip.Items[0].Text, "первый пункт меню");
+                }
+            }
+            finally { L.Use("ru"); }
         }
 
         static void Transparency()

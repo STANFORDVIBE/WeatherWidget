@@ -7,6 +7,16 @@ A single `.exe` with no installation: runs on any Windows 10/11 using the built-
 
 ![The widget in different weather](docs/preview.en.png)
 
+## Installation
+
+1. Download `WeatherWidget-<version>.zip` from the [latest release](../../releases/latest).
+2. Unzip it to any folder and run `WeatherWidget.exe` — no installation needed.
+3. Find your city in the search window that appears.
+
+**If Windows warns you.** The program isn't code-signed (a certificate costs money), so on first launch Windows
+may show "Windows protected your PC". Click **"More info"** → **"Run anyway"**.
+The source code is open — you can build the exe yourself (see "Building").
+
 ## Features
 
 - **Animated weather** — the sun with rotating rays, drifting clouds, rain, snow;
@@ -33,6 +43,8 @@ A single `.exe` with no installation: runs on any Windows 10/11 using the built-
 - **Works when the connection fails** — if the main source is unavailable, the weather comes from the backup
   (MET Norway); without internet the widget shows the latest data marked "offline · data from 25 min ago"
   and refreshes by itself as soon as the network is back.
+- **Tells you about new versions** — once a day it checks the latest release on GitHub; if there's a new one,
+  "Version … is available — download…" appears at the top of the menu. It never downloads or installs anything by itself.
 - **Light on the system** — ~1–2% of one CPU core, ~45 MB of memory.
 
 ![Expanded forecast and tooltip](docs/forecast.en.png)
@@ -59,6 +71,7 @@ All you need is Windows with .NET Framework 4.x (included in Windows 10/11) — 
 build.bat                 :: build bin\WeatherWidget.exe
 test.bat                  :: build and run the tests
 tools\make-assets.bat     :: regenerate the icon and README images (Russian and English)
+tools\make-release.bat 1.1.0   :: build, test and pack dist\WeatherWidget-1.1.0.zip for a release
 ```
 
 The code is written in C# 5 — the version understood by the `csc.exe` compiler built into .NET Framework.

@@ -33,6 +33,8 @@ namespace WeatherWidget
         readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer dynTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer retryTimer = new System.Windows.Forms.Timer();   // повтор, пока нет связи
+        readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer();  // новая версия на GitHub
+        UpdateInfo update;                 // вышла новая версия; null — нет или ещё не проверяли
         // меню пересобирается при смене языка
         ContextMenuStrip menu;
         ToolStripMenuItem dynItem, topMostItem, autoStartItem;
@@ -124,6 +126,15 @@ namespace WeatherWidget
         {
             ContextMenuStrip old = menu;
             menu = new ContextMenuStrip();
+            if (update != null)
+            {
+                string url = update.Url;
+                ToolStripMenuItem upd = new ToolStripMenuItem(L.T("Доступна версия ", "Version ") + update.Version +
+                    L.T(" — скачать…", " is available — download…"), null, delegate { OpenUrl(url); });
+                upd.Font = new Font(upd.Font, FontStyle.Bold);
+                menu.Items.Add(upd);
+                menu.Items.Add(new ToolStripSeparator());
+            }
             menu.Items.Add(L.T("Выбрать город…", "Choose city…"), null, delegate { ShowCityMenu(); });
             dynItem = new ToolStripMenuItem(L.T("Динамическая погода", "Dynamic weather"));
             dynItem.Checked = dynamic;
@@ -252,6 +263,11 @@ namespace WeatherWidget
             retryTimer.Interval = OfflineRetryMinutes * 60 * 1000;
             retryTimer.Tick += delegate { retryTimer.Stop(); Fetch(target); };
 
+            // новая версия: через минуту после запуска (не мешать загрузке погоды), дальше раз в сутки
+            updateTimer.Interval = 60 * 1000;
+            updateTimer.Tick += delegate { updateTimer.Interval = 24 * 60 * 60 * 1000; CheckUpdates(); };
+            updateTimer.Start();
+
             // сеть вернулась — обновить сразу, не дожидаясь таймера
             NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
         }
@@ -264,6 +280,28 @@ namespace WeatherWidget
                 if (data == null || data.Stale || error != null) Fetch(target);
                 TranslateCities();
             });
+        }
+
+        void CheckUpdates()
+        {
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                UpdateInfo u = Updates.Check(Http.Download);
+                if (u != null) SafeInvoke(delegate { ShowUpdate(u); });
+            });
+        }
+
+        // Пункт «Доступна версия …» первым в меню
+        internal void ShowUpdate(UpdateInfo u)
+        {
+            if (update != null && update.Version == u.Version) return;
+            update = u;
+            BuildMenus();
+        }
+
+        static void OpenUrl(string url)
+        {
+            try { System.Diagnostics.Process.Start(url); } catch { }
         }
 
         void ShowAbout()
