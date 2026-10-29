@@ -16,6 +16,42 @@ namespace WeatherWidget
                 Clothes(d);
         }
 
+        // Восход и закат, а днём при заметном солнце — УФ-индекс: «Восход 07:29, закат 16:56.».
+        // После заката — завтрашние. Пусто, если источник их не сообщает (MET Norway).
+        public static string SunNote(WeatherData d, DateTime nowUtc)
+        {
+            DateTime today = d.Local(nowUtc).Date;
+            SunDay td = null, tm = null;
+            foreach (SunDay s in d.Sun)
+            {
+                if (s.Date == today) td = s;
+                else if (s.Date == today.AddDays(1)) tm = s;
+            }
+            if (td != null && td.PolarNight)
+                return L.T("\n\nПолярная ночь — солнце сегодня не встаёт.", "\n\nPolar night — the sun doesn't rise today.");
+            if (td != null && td.PolarDay)
+                return L.T("\n\nПолярный день — солнце сегодня не заходит.", "\n\nPolar day — the sun doesn't set today.") + UvNote(td);
+            if (td != null && nowUtc < td.SetUtc)
+                return L.T("\n\nВосход ", "\n\nSunrise ") + d.Local(td.RiseUtc).ToString("HH:mm") +
+                    L.T(", закат ", ", sunset ") + d.Local(td.SetUtc).ToString("HH:mm") + "." + UvNote(td);
+            if (tm != null && !tm.PolarNight && !tm.PolarDay)
+                return L.T("\n\nЗавтра восход ", "\n\nTomorrow: sunrise ") + d.Local(tm.RiseUtc).ToString("HH:mm") +
+                    L.T(", закат ", ", sunset ") + d.Local(tm.SetUtc).ToString("HH:mm") + ".";
+            return "";
+        }
+
+        // УФ-индекс за день по шкале ВОЗ; низкий (до 3) не упоминается
+        static string UvNote(SunDay s)
+        {
+            int uv = (int)Math.Round(s.Uv, MidpointRounding.AwayFromZero);
+            if (uv < 3) return "";
+            string head = L.T("\nУФ-индекс до ", "\nUV index up to ") + uv;
+            if (uv <= 5) return head + L.T(" — днём пригодится крем от солнца.", " — sunscreen will help during the day.");
+            if (uv <= 7) return head + L.T(" (высокий) — нужны крем от солнца и головной убор.", " (high) — use sunscreen and wear a hat.");
+            if (uv <= 10) return head + L.T(" (очень высокий) — крем, головной убор, в полдень лучше в тени.", " (very high) — sunscreen, a hat and shade at midday.");
+            return head + L.T(" (экстремальный) — в полдень не стоит быть на солнце.", " (extreme) — avoid the sun at midday.");
+        }
+
         // Приписка к подсказке: резервный источник или устаревшие данные (пусто, если всё обычно)
         public static string SourceNote(WeatherData d, DateTime nowUtc)
         {

@@ -26,7 +26,7 @@ namespace WeatherWidget
                 "&longitude=" + c.Lon.ToString(CultureInfo.InvariantCulture) +
                 "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" +
                 "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
-                "&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=4" +
+                "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max&forecast_days=4" +
                 "&wind_speed_unit=ms&timezone=auto";
         }
 
@@ -84,7 +84,31 @@ namespace WeatherWidget
                 }
             }
             catch { }   // без прогноза виджет всё равно показывает текущую погоду
+
+            try { ParseSun(d, root); }
+            catch { d.Sun.Clear(); }   // без восхода и заката подсказка просто короче
             return d;
+        }
+
+        // Восход, закат и УФ-индекс по дням, начиная с сегодняшнего. Время в ответе — местное.
+        static void ParseSun(WeatherData d, Dictionary<string, object> root)
+        {
+            Dictionary<string, object> daily = (Dictionary<string, object>)root["daily"];
+            if (!daily.ContainsKey("sunrise") || !daily.ContainsKey("sunset")) return;
+            object[] time = (object[])daily["time"];
+            object[] rise = (object[])daily["sunrise"];
+            object[] set = (object[])daily["sunset"];
+            object[] uv = daily.ContainsKey("uv_index_max") ? (object[])daily["uv_index_max"] : null;
+            for (int i = 0; i < time.Length; i++)
+            {
+                if (rise[i] == null || set[i] == null) continue;
+                SunDay s = new SunDay();
+                s.Date = DateTime.ParseExact((string)time[i], "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                s.RiseUtc = DateTime.SpecifyKind(LocalTime((string)rise[i]).AddSeconds(-d.UtcOffset), DateTimeKind.Utc);
+                s.SetUtc = DateTime.SpecifyKind(LocalTime((string)set[i]).AddSeconds(-d.UtcOffset), DateTimeKind.Utc);
+                if (uv != null && uv[i] != null) s.Uv = Num(uv[i]);
+                d.Sun.Add(s);
+            }
         }
 
         public const int HoursAhead = 24;   // сколько часов прогноза хранить

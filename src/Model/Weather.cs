@@ -15,6 +15,18 @@ namespace WeatherWidget
         public double Max, Min;
     }
 
+    // Солнце в один день (местная дата города): восход, закат и наибольший УФ-индекс.
+    // Полярная ночь — восход равен закату, полярный день — закат через сутки после восхода.
+    sealed class SunDay
+    {
+        public DateTime Date;
+        public DateTime RiseUtc, SetUtc;
+        public double Uv = -1;       // -1 — неизвестен
+
+        public bool PolarNight { get { return SetUtc <= RiseUtc; } }
+        public bool PolarDay { get { return SetUtc - RiseUtc >= TimeSpan.FromHours(24); } }
+    }
+
     // Прогноз на один час
     sealed class HourForecast
     {
@@ -37,6 +49,7 @@ namespace WeatherWidget
         public int UtcOffset;               // смещение часового пояса города, секунды
         public List<DayForecast> Days = new List<DayForecast>();
         public List<HourForecast> Hours = new List<HourForecast>();   // по времени, от текущего часа
+        public List<SunDay> Sun = new List<SunDay>();   // с сегодняшнего дня; пусто — источник не сообщает (MET Norway)
 
         public string Source = "";          // откуда данные: Open-Meteo или MET Norway
         public DateTime FetchedUtc;         // когда получены

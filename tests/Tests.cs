@@ -59,6 +59,7 @@ namespace WeatherWidget.Tests
             Run("Подсказки при опечатках в поиске города", Typos);
             Run("Единицы: °F и mph", ImperialUnits);
             Run("Проверка обновлений", UpdateCheck);
+            Run("Восход, закат и УФ-индекс", SunAndUv);
             Run("Установка обновления", UpdateInstall);
             Run("Журнал ошибок", ErrorLogFile);
             Run("Окно: масштаб сохраняется без масштаба экрана", ScaleSaved);
@@ -103,6 +104,56 @@ namespace WeatherWidget.Tests
         }
 
         // ---------- тесты ----------
+
+        static void SunAndUv()
+        {
+            WeatherData d = OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"));   // сейчас 25 октября 18:30 МСК
+            Eq(4, d.Sun.Count, "восход и закат на 4 дня, с сегодняшнего");
+            Eq(new DateTime(2026, 10, 25, 4, 21, 0, DateTimeKind.Utc), d.Sun[0].RiseUtc, "восход в UTC");
+            Eq(-1.0, d.Sun[2].Uv, "пустой УФ-индекс — неизвестен");
+
+            DateTime evening = new DateTime(2026, 10, 25, 15, 30, 0, DateTimeKind.Utc);
+            Eq("\n\nЗавтра восход 07:23, закат 17:02.", Advice.SunNote(d, evening), "после заката — завтрашние");
+            DateTime morning = new DateTime(2026, 10, 26, 6, 0, 0, DateTimeKind.Utc);
+            Eq("\n\nВосход 07:23, закат 17:02.\nУФ-индекс до 4 — днём пригодится крем от солнца.", Advice.SunNote(d, morning), "днём — сегодняшние и УФ");
+            Eq("\n\nВосход 07:21, закат 17:04.", Advice.SunNote(d, new DateTime(2026, 10, 25, 3, 0, 0, DateTimeKind.Utc)), "низкий УФ не упоминается");
+            Eq("", Advice.SunNote(d, new DateTime(2026, 11, 5, 9, 0, 0, DateTimeKind.Utc)), "старые данные — ничего");
+            Eq("", Advice.SunNote(new WeatherData(), morning), "MET Norway — ничего");
+
+            // шкала УФ и полярные день и ночь
+            SunDay s = new SunDay();
+            s.Date = new DateTime(2026, 10, 26);
+            s.RiseUtc = new DateTime(2026, 10, 26, 3, 0, 0, DateTimeKind.Utc);
+            s.SetUtc = new DateTime(2026, 10, 26, 15, 0, 0, DateTimeKind.Utc);
+            WeatherData u = new WeatherData();
+            u.Sun.Add(s);
+            DateTime noon = new DateTime(2026, 10, 26, 9, 0, 0, DateTimeKind.Utc);
+            s.Uv = 6.6;
+            Check(Advice.SunNote(u, noon).EndsWith("УФ-индекс до 7 (высокий) — нужны крем от солнца и головной убор."), "УФ 7 — высокий");
+            s.Uv = 9;
+            Check(Advice.SunNote(u, noon).Contains("(очень высокий)"), "УФ 9 — очень высокий");
+            s.Uv = 11.4;
+            Check(Advice.SunNote(u, noon).Contains("(экстремальный)"), "УФ 11 — экстремальный");
+            s.SetUtc = s.RiseUtc;
+            Eq("\n\nПолярная ночь — солнце сегодня не встаёт.", Advice.SunNote(u, noon), "полярная ночь");
+            s.SetUtc = s.RiseUtc.AddHours(24);
+            s.Uv = 2;
+            Eq("\n\nПолярный день — солнце сегодня не заходит.", Advice.SunNote(u, noon), "полярный день");
+
+            L.Use("en");
+            try { Eq("\n\nTomorrow: sunrise 07:23, sunset 17:02.", Advice.SunNote(d, evening), "по-английски"); }
+            finally { L.Use("ru"); }
+
+            // кэш сохраняет восход, закат и УФ
+            string dir = Path.GetDirectoryName(TempFile());
+            WeatherCache cache = new WeatherCache(dir);
+            d.FetchedUtc = DateTime.UtcNow;
+            cache.Save(d);
+            WeatherData c = cache.Load(Moscow, TimeSpan.FromHours(1));
+            Check(c != null && c.Sun.Count == 4, "кэш: 4 дня");
+            Eq(Advice.SunNote(d, morning), Advice.SunNote(c, morning), "кэш: та же подсказка");
+            Directory.Delete(dir, true);
+        }
 
         static void ErrorLogFile()
         {

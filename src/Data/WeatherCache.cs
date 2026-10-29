@@ -42,6 +42,9 @@ namespace WeatherWidget
                 foreach (DayForecast f in d.Days)
                     lines.Add("day=" + f.Label + "|" + f.Sky + "|" + f.Max.ToString(Inv) + "|" + f.Min.ToString(Inv) +
                         (f.Date != DateTime.MinValue ? "|" + f.Date.ToString("yyyy-MM-dd", Inv) : ""));
+                foreach (SunDay s in d.Sun)
+                    lines.Add("sun=" + s.Date.ToString("yyyy-MM-dd", Inv) + "|" + s.RiseUtc.ToString("o", Inv) + "|" +
+                        s.SetUtc.ToString("o", Inv) + "|" + s.Uv.ToString(Inv));
                 foreach (HourForecast h in d.Hours)
                     lines.Add("hour=" + h.Utc.ToString("o", Inv) + "|" + h.Temp.ToString(Inv) + "|" +
                         h.Code + "|" + (h.IsDay ? "1" : "0") + "|" + h.Precip);
@@ -88,6 +91,10 @@ namespace WeatherWidget
                             HourForecast h = ParseHour(v);
                             if (h != null) d.Hours.Add(h);
                             break;
+                        case "sun":
+                            SunDay s = ParseSun(v);
+                            if (s != null) d.Sun.Add(s);
+                            break;
                     }
                 }
                 if (!hasFetched || !hasTemp) return null;
@@ -110,6 +117,21 @@ namespace WeatherWidget
             try { f.Sky = (Sky)Enum.Parse(typeof(Sky), p[1]); } catch { return null; }
             f.Label = p[0];
             return f;
+        }
+
+        // дата|восход UTC|закат UTC|УФ-индекс
+        static SunDay ParseSun(string v)
+        {
+            string[] p = v.Split('|');
+            SunDay s = new SunDay();
+            if (p.Length != 4 ||
+                !DateTime.TryParseExact(p[0], "yyyy-MM-dd", Inv, DateTimeStyles.None, out s.Date) ||
+                !DateTime.TryParse(p[1], Inv, DateTimeStyles.RoundtripKind, out s.RiseUtc) ||
+                !DateTime.TryParse(p[2], Inv, DateTimeStyles.RoundtripKind, out s.SetUtc) ||
+                !double.TryParse(p[3], NumberStyles.Float, Inv, out s.Uv)) return null;
+            s.RiseUtc = s.RiseUtc.ToUniversalTime();
+            s.SetUtc = s.SetUtc.ToUniversalTime();
+            return s;
         }
 
         // UTC|температура|код|день|вероятность осадков

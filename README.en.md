@@ -23,6 +23,8 @@ The source code is open — you can build the exe yourself (see "Building").
   at night — the moon and twinkling stars. The background color changes with the weather.
 - **"Feels like" and what to wear** — hover over the temperature: the feels-like temperature,
   wind and humidity in plain words, plus clothing advice ("a T-shirt is fine", "a hoodie", "a warm jacket"…).
+- **Sunrise, sunset and UV index** — in the same tooltip: "Sunrise 07:29, sunset 16:56", after sunset — tomorrow's;
+  when the sun is strong — "UV index up to 8 (very high) — sunscreen, a hat and shade at midday".
 - **Umbrella by forecast, not by window** — the advice checks precipitation 12 hours ahead:
   "Rain from 17:00 (80%) — take an umbrella", and if it's already raining — "rain until 16:00".
 - **Hourly and 3-day forecast** — expands with a small button next to the time:
@@ -63,7 +65,7 @@ The source code is open — you can build the exe yourself (see "Building").
 |---|---|
 | Click the city name | city panel: search and your cities (click again, Esc or click outside — close; arrows and Enter — pick with the keyboard) |
 | Hover the city name | country |
-| Hover the temperature | feels like, wind, humidity, what to wear |
+| Hover the temperature | feels like, wind, humidity, what to wear, sunrise and sunset, UV index |
 | ⌄ button next to the time | expand / collapse the hourly and 3-day forecast |
 | Double-click the card | turn "Dynamic weather" on / off |
 | Drag the card | move the widget |
@@ -94,7 +96,7 @@ src/
   Model/                     data: city, weather, built-in city lists
   Logic/                     logic without UI — covered by tests
     WeatherCodes.cs            WMO weather codes → sky type and description
-    Advice.cs                  feels like, wind, humidity, what to wear, upcoming precipitation
+    Advice.cs                  feels like, wind, humidity, what to wear, upcoming precipitation, sun and UV
     CityRotation.cs            order of "dynamic weather" cities
     CustomCities.cs            your cities
     Lang.cs                    UI language: texts in pairs L.T("рус", "eng")
