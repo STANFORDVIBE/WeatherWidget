@@ -27,6 +27,7 @@ A single `.exe` with no installation: runs on any Windows 10/11 using the built-
   while text and animation stay crisp.
 - **Russian and English** — the default language follows Windows; switch it in the "Язык / Language" menu
   instantly, without a restart: texts, advice, weekdays, city search and the "dynamic weather" cities.
+- **°C or °F** — the "Units" menu: °C and m/s or °F and mph; by default — as usual in the country from Windows settings.
 - **Neat window** — smooth edges, scale from 60 to 250% by dragging any corner,
   tooltips that don't activate the window, position and all settings remembered.
 - **Works when the connection fails** — if the main source is unavailable, the weather comes from the backup
@@ -47,7 +48,7 @@ A single `.exe` with no installation: runs on any Windows 10/11 using the built-
 | Double-click the card | turn "Dynamic weather" on / off |
 | Drag the card | move the widget |
 | Card corner | resize |
-| Right click | menu: choose city, dynamic weather, refresh, transparency, always on top, start with Windows, language, about, exit |
+| Right click | menu: choose city, dynamic weather, refresh, transparency, always on top, start with Windows, language, units, about, exit |
 | Transparency… | background transparency slider; mouse wheel and arrows — 5% step, Esc or click outside — close |
 
 ## Building
@@ -75,6 +76,7 @@ src/
     CityRotation.cs            order of "dynamic weather" cities
     CustomCities.cs            your cities
     Lang.cs                    UI language: texts in pairs L.T("рус", "eng")
+    Units.cs                   units: °C and m/s or °F and mph
     CityNames.cs               your cities' names in another language
     CitySuggest.cs             typo suggestions: Damerau–Levenshtein distance
   Data/
@@ -126,6 +128,8 @@ assets/cities.txt            ~2800 large cities in two languages — embedded in
   in the language of its name, then its name in the new language is fetched by GeoNames id
   (so "Омск" becomes "Omsk", not "Omskiy"). Offline, names stay as they are and get translated
   on the next launch or when the network is back.
+- **Units.** Weather is stored and advice is computed in °C and m/s; °F and mph are converted only for display.
+  °F is the default for the US, Liberia and Myanmar (country from Windows settings); the menu choice is saved (`units=…`).
 - **Settings** live in `%APPDATA%\WeatherWidget\settings.txt` (`key=value` format),
   the weather cache — in `%APPDATA%\WeatherWidget\cache\`.
   Autostart is an entry in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, no admin rights needed.

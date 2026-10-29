@@ -28,6 +28,7 @@ namespace WeatherWidget
         readonly CustomCities custom;
         CityRotation rotation;             // города — на языке интерфейса, пересоздаётся при смене языка
         string lang;                       // выбранный в меню язык; null — как в Windows
+        string units;                      // выбранные в меню единицы; null — как принято в стране из настроек Windows
 
         readonly System.Windows.Forms.Timer refreshTimer = new System.Windows.Forms.Timer();
         readonly System.Windows.Forms.Timer dynTimer = new System.Windows.Forms.Timer();
@@ -84,6 +85,8 @@ namespace WeatherWidget
             // язык не выбран в меню — остаётся тот, что определили по Windows при запуске
             lang = s.Lang;
             if (lang != null) L.Use(lang);
+            units = s.Units;
+            if (units != null) Units.Use(units);
             dynamic = s.Dynamic;
             if (s.Transparency.HasValue) bgTransparency = Math.Max(0, Math.Min(MaxTransparency, s.Transparency.Value));
             TopMost = s.TopMost;
@@ -112,6 +115,7 @@ namespace WeatherWidget
             s.Scale = scale;
             s.Transparency = bgTransparency;
             s.Lang = lang;
+            s.Units = units;
             foreach (City c in custom.Items) s.Custom.Remember(c);
             s.Save(settingsPath);
         }
@@ -145,6 +149,14 @@ namespace WeatherWidget
             langItem.DropDownItems.Add(ru);
             langItem.DropDownItems.Add(en);
             menu.Items.Add(langItem);
+            ToolStripMenuItem unitsItem = new ToolStripMenuItem(L.T("Единицы", "Units"));
+            ToolStripMenuItem metric = new ToolStripMenuItem(L.T("°C, м/с", "°C, m/s"), null, delegate { SetUnits("metric"); });
+            ToolStripMenuItem imperial = new ToolStripMenuItem("°F, mph", null, delegate { SetUnits("imperial"); });
+            metric.Checked = !Units.Imperial;
+            imperial.Checked = Units.Imperial;
+            unitsItem.DropDownItems.Add(metric);
+            unitsItem.DropDownItems.Add(imperial);
+            menu.Items.Add(unitsItem);
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(L.T("О программе", "About"), null, delegate { ShowAbout(); });
             menu.Items.Add(L.T("Выход", "Exit"), null, delegate { Close(); });
@@ -165,6 +177,15 @@ namespace WeatherWidget
             if (dynamic) { rotation.Restart(); dynTimer.Stop(); dynTimer.Start(); Fetch(rotation.Next()); }
             else if (target != null) { error = null; Fetch(target); }   // описание погоды и ошибки — на новом языке
             TranslateCities();
+        }
+
+        // Сменить единицы: карточка перерисуется со следующим кадром, данные перезагружать не нужно
+        internal void SetUnits(string code)
+        {
+            units = code;
+            Units.Use(code);
+            SaveSettings();
+            SafeInvoke(delegate { BuildMenus(); });   // галочка в меню
         }
 
         bool translating;

@@ -10,8 +10,8 @@ namespace WeatherWidget
         // Полный текст подсказки при наведении на температуру
         public static string TipText(WeatherData d)
         {
-            return L.T("Ощущается как ", "Feels like ") + Format.Deg(d.Feels) + "C\n" +
-                L.T("Ветер ", "Wind ") + d.Wind.ToString("0.#", CultureInfo.InvariantCulture) + L.T(" м/с — ", " m/s — ") + WindFeel(d.Wind) + "\n" +
+            return L.T("Ощущается как ", "Feels like ") + Format.Deg(d.Feels) + Units.TempLetter + "\n" +
+                L.T("Ветер ", "Wind ") + Units.Wind(d.Wind) + " — " + WindFeel(d.Wind) + "\n" +
                 L.T("Влажность ", "Humidity ") + d.Humidity + "% — " + HumidityFeel(d.Humidity, d.Feels) + "\n\n" +
                 Clothes(d);
         }
@@ -119,11 +119,12 @@ namespace WeatherWidget
 
     static class Format
     {
-        // Температура для показа: «+6°», «0°», «-3°»
-        public static string Deg(double v)
+        // Температура для показа (из °C в выбранных единицах): «+6°», «0°», «-3°»;
+        // в °F без плюса — так принято в США («68°»), да и ниже нуля там бывает редко
+        public static string Deg(double celsius)
         {
-            int r = (int)Math.Round(v, MidpointRounding.AwayFromZero);
-            return (r > 0 ? "+" : "") + r + "°";
+            int r = (int)Math.Round(Units.Temp(celsius), MidpointRounding.AwayFromZero);
+            return (r > 0 && !Units.Imperial ? "+" : "") + r + "°";
         }
 
         // Давность данных: «только что», «25 мин назад», «3 ч назад», «2 дн. назад» (или по-английски)

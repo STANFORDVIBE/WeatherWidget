@@ -18,6 +18,7 @@ namespace WeatherWidget
         public float? Scale;                 // масштаб карточки, 1 = 100%
         public int? Transparency;            // прозрачность фона карточки, %
         public string Lang;                  // "ru" или "en"; null — язык Windows
+        public string Units;                 // "metric" или "imperial"; null — как принято в стране из настроек Windows
         public readonly CustomCities Custom = new CustomCities();
 
         public static string DefaultPath
@@ -65,6 +66,7 @@ namespace WeatherWidget
                             break;
                         case "transparency": if (int.TryParse(v, out n)) s.Transparency = n; break;
                         case "lang": if (v == "ru" || v == "en") s.Lang = v; break;
+                        case "units": if (v == "metric" || v == "imperial") s.Units = v; break;
                         case "fav":
                             City c = ParseFav(v);
                             if (c != null) s.Custom.Remember(c);
@@ -109,6 +111,7 @@ namespace WeatherWidget
                 if (Scale.HasValue) lines.Add("scale=" + Scale.Value.ToString("0.###", CultureInfo.InvariantCulture));
                 if (Transparency.HasValue) lines.Add("transparency=" + Transparency.Value);
                 if (Lang != null) lines.Add("lang=" + Lang);
+                if (Units != null) lines.Add("units=" + Units);
                 foreach (City c in Custom.Items)
                     lines.Add("fav=" + Clean(c.Name) + "|" + Clean(c.Country) + "|" +
                         c.Lat.ToString(CultureInfo.InvariantCulture) + "|" + c.Lon.ToString(CultureInfo.InvariantCulture) + "|" + c.Lang + "|" + c.Id);

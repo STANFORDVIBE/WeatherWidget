@@ -23,6 +23,7 @@ namespace WeatherWidget.Tests
         {
             Console.OutputEncoding = Encoding.UTF8;
             L.Use("ru");   // тесты пишутся по-русски, английский проверяется отдельно
+            Units.Use("metric");   // °C и м/с; °F и mph — в отдельном тесте
             fixtures = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\tests\fixtures"));
 
             Run("Коды погоды", WeatherCodesMap);
@@ -56,6 +57,7 @@ namespace WeatherWidget.Tests
             Run("Английский язык", English);
             Run("Названия своих городов при смене языка", CityNamesTranslate);
             Run("Подсказки при опечатках в поиске города", Typos);
+            Run("Единицы: °F и mph", ImperialUnits);
 
             Console.WriteLine();
             Console.WriteLine(failed == 0 ? "ВСЕ ТЕСТЫ ПРОШЛИ: " + passed + " проверок" : "ОШИБКИ: " + failed + " из " + (passed + failed));
@@ -855,6 +857,44 @@ namespace WeatherWidget.Tests
             using (CityPicker p = new CityPicker(f))
             using (Bitmap b = p.RenderPreview("Sidney", CitySuggest.Merge(sidneys, CitySuggest.Find("Sidney", "en", 5), 8)))
                 Check(b.Height > 150, "панель с подсказкой рисуется");
+        }
+
+        static void ImperialUnits()
+        {
+            string path = TempFile();
+            Units.Use("imperial");
+            L.Use("en");
+            try
+            {
+                Eq("68°", Format.Deg(20), "20 °C = 68 °F, без плюса");
+                Eq("14°", Format.Deg(-10), "-10 °C = 14 °F");
+                Eq("-4°", Format.Deg(-20), "ниже нуля по Фаренгейту — с минусом");
+                Eq("32°", Format.Deg(0), "ноль по Цельсию");
+                Eq("10 mph", Units.Wind(4.5), "4.5 м/с ≈ 10 миль/ч");
+                WeatherData d = OpenMeteo.ParseForecast(Moscow, Fixture("forecast.json"));
+                string tip = Advice.TipText(d);
+                Check(tip.StartsWith("Feels like 39°F") && tip.Contains("Wind 9 mph"), "подсказка в °F и mph: " + tip.Split('\n')[0]);
+                Check(tip.Contains("Cold — a warm jacket"), "совет по одежде — по-прежнему по °C (ощущается +3.9 °C)");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                File.WriteAllText(path, "city=Омск\ncountry=Россия\nlat=54.9885\nlon=73.3242\n", Encoding.UTF8);
+                using (WeatherForm f = new WeatherForm(path))
+                {
+                    Check(Units.Imperial, "без выбора в меню — как в Windows (здесь °F)");
+                    f.SetUnits("metric");
+                    Check(!Units.Imperial, "переключение на °C");
+                    Eq("+20°", Format.Deg(20), "снова по Цельсию");
+                }
+                Eq("metric", Settings.Load(path).Units, "выбор сохраняется в настройки");
+                Units.Use("imperial");
+                using (WeatherForm f = new WeatherForm(path))
+                    Check(!Units.Imperial, "при запуске берутся единицы из настроек");
+                Units.Use("metric");
+                Eq("4.5 m/s", Units.Wind(4.5), "метрические — м/с");
+            }
+            finally { Units.Use("metric"); L.Use("ru"); }
+            Eq("4.5 м/с", Units.Wind(4.5), "по-русски");
+            Directory.Delete(Path.GetDirectoryName(path), true);
         }
 
         static void Transparency()
