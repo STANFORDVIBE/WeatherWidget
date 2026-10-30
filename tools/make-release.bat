@@ -1,7 +1,7 @@
 @echo off
 rem Builds, tests and packs a release: dist\WeatherWidget-<version>.zip (exe + README.txt)
 rem and its checksum dist\WeatherWidget-<version>.zip.sha256 - the widget checks it before updating itself
-rem Usage: tools\make-release.bat 1.3.2   (the version must match Program.Version)
+rem Usage: tools\make-release.bat 1.3.3   (the version must match Program.Version)
 setlocal
 cd /d "%~dp0.."
 if "%~1"=="" (

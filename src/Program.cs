@@ -7,8 +7,8 @@ using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Погода — виджет для рабочего стола")]
 [assembly: AssemblyProduct("WeatherWidget")]
-[assembly: AssemblyVersion("1.3.2.0")]
-[assembly: AssemblyFileVersion("1.3.2.0")]
+[assembly: AssemblyVersion("1.3.3.0")]
+[assembly: AssemblyFileVersion("1.3.3.0")]
 [assembly: InternalsVisibleTo("WeatherWidget.Tests")]
 [assembly: InternalsVisibleTo("WeatherWidget.Tools")]
 
@@ -16,7 +16,7 @@ namespace WeatherWidget
 {
     static class Program
     {
-        public const string Version = "1.3.2";
+        public const string Version = "1.3.3";
 
         // имена — в пределах сеанса пользователя (Local\): у каждого пользователя Windows свой виджет
         const string MutexName = @"Local\WeatherWidget.Running", WakeName = @"Local\WeatherWidget.Show";
