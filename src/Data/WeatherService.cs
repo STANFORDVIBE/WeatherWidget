@@ -26,7 +26,7 @@ namespace WeatherWidget
         readonly Dictionary<string, DateTime> reported = new Dictionary<string, DateTime>();   // ошибка → когда сообщили
 
         public WeatherService(Func<string, string> download, WeatherCache cache, int retryDelayMs)
-            : this(download, cache, retryDelayMs, 3000, 12000) { }
+            : this(download, cache, retryDelayMs, 6000, 15000) { }
 
         public WeatherService(Func<string, string> download, WeatherCache cache, int retryDelayMs, int metDelayMs, int totalTimeoutMs)
         {
