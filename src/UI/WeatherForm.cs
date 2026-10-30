@@ -43,6 +43,10 @@ namespace WeatherWidget
         internal CustomCities Custom { get { return custom; } }
         internal RefreshSchedule Schedule { get { return schedule; } }   // для тестов
 
+        // Пауза перед первой загрузкой (автозапуск: сеть после входа в Windows поднимается не сразу,
+        // и Open-Meteo не успевал ответить). Кэш при этом показывается сразу.
+        internal int StartDelayMs;
+
         public WeatherForm() : this(Settings.DefaultPath) { }
 
         public WeatherForm(string settingsPath)
@@ -76,8 +80,8 @@ namespace WeatherWidget
             FormClosing += delegate { SaveSettings(); };
             Load += delegate
             {
-                if (dynamic) { rotation.Restart(); schedule.StartDynamic(); Fetch(rotation.Next()); }
-                else Fetch(home);
+                if (dynamic) { rotation.Restart(); schedule.StartDynamic(); Fetch(rotation.Next(), StartDelayMs); }
+                else Fetch(home, StartDelayMs);
                 TranslateCities();   // язык сменили, когда не было связи, — перевести сейчас
             };
             // город ещё не выбран — сразу предложить выбрать
@@ -395,7 +399,9 @@ namespace WeatherWidget
 
         // ---------- Данные ----------
 
-        void Fetch(City c)
+        void Fetch(City c) { Fetch(c, 0); }
+
+        void Fetch(City c, int delayMs)
         {
             if (c == null) return;
             target = c;
@@ -411,6 +417,7 @@ namespace WeatherWidget
                     WeatherData old = weather.Cached(c);
                     SafeInvoke(delegate { if (c == target && loading) ShowNow(c, old); });
                 }
+                if (delayMs > 0) Thread.Sleep(delayMs);
                 WeatherData d = weather.Get(c);   // Open-Meteo и MET Norway наперегонки, иначе кэш
                 SafeInvoke(delegate { OnWeather(c, d); });
             });
@@ -438,8 +445,8 @@ namespace WeatherWidget
             }
             else if (data == null || !data.City.Same(c)) error = L.T("Нет связи с сервером", "Can't reach the server");   // показать нечего
 
-            // нет свежих данных — повторить через пару минут (в динамике и так скоро следующий город)
-            schedule.RetryLater((d == null || d.Stale) && !dynamic);
+            // нет свежих данных или они резервные — повторить через пару минут (в динамике и так скоро следующий город)
+            schedule.RetryLater(WeatherService.NeedsRetry(d) && !dynamic);
         }
 
         internal void SafeInvoke(MethodInvoker m)

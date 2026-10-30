@@ -27,6 +27,7 @@ namespace WeatherWidget
         static void Main(string[] args)
         {
             bool updated = Array.IndexOf(args, UpdatedArg) >= 0;
+            bool autoStarted = Array.IndexOf(args, AutoStart.Arg) >= 0;
             // Одна копия: два виджета писали бы в один settings.txt (например, автозапуск + запуск exe вручную).
             // Вторая копия только показывает первую и закрывается.
             bool first;
@@ -35,7 +36,7 @@ namespace WeatherWidget
                 // после обновления прежняя версия ещё закрывается — дождаться её, а не будить
                 if (!first && updated) first = Acquire(running, 15000);
                 if (!first) { WakeFirstCopy(); return; }
-                Run(updated);
+                Run(updated, autoStarted);
             }
         }
 
@@ -51,7 +52,10 @@ namespace WeatherWidget
             System.Diagnostics.Process.Start(Application.ExecutablePath, UpdatedArg);
         }
 
-        static void Run(bool updated)
+        // Сколько ждать сеть перед первой загрузкой погоды при запуске вместе с Windows
+        const int AutoStartDelayMs = 4000;
+
+        static void Run(bool updated, bool autoStarted)
         {
             ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; // TLS 1.2
             // по умолчанию .NET Framework держит не больше 2 соединений с сервером — остальные запросы
@@ -75,6 +79,8 @@ namespace WeatherWidget
             using (WeatherForm form = new WeatherForm())
             {
                 form.EnableTray();
+                if (autoStarted) form.StartDelayMs = AutoStartDelayMs;
+                AutoStart.Sync();   // запись автозапуска — с ключом --autostart и путём к этому exe
                 Updates.CleanUp(Application.ExecutablePath);   // прежний exe, оставшийся после обновления
                 if (updated) form.Shown += delegate { form.ShowUpdated(); };
                 // вторая копия будит первую — показать виджет

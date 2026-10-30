@@ -58,6 +58,13 @@ namespace WeatherWidget
             return Cached(c);
         }
 
+        // Повторить загрузку через пару минут: свежих данных нет или они от резервного источника
+        // (Open-Meteo мог не ответить лишь потому, что сеть после включения компьютера ещё не поднялась)
+        public static bool NeedsRetry(WeatherData d)
+        {
+            return d == null || d.Stale || d.Source == MetNo.Name;
+        }
+
         // Только кэш (например, чтобы сразу показать погоду при запуске, пока идёт загрузка)
         public WeatherData Cached(City c)
         {

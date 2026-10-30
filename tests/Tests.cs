@@ -684,6 +684,17 @@ namespace WeatherWidget.Tests
 
             Check(svc.Get(Spb) == null, "оба упали и кэша нет — null");
 
+            // резервные данные или кэш — повторить попозже, чтобы вернуться на Open-Meteo
+            WeatherData om = new WeatherData(); om.Source = OpenMeteo.Name;
+            WeatherData met = new WeatherData(); met.Source = MetNo.Name;
+            WeatherData old = new WeatherData(); old.Source = OpenMeteo.Name; old.Stale = true;
+            Check(!WeatherService.NeedsRetry(om), "Open-Meteo — повтор не нужен");
+            Check(WeatherService.NeedsRetry(met), "MET Norway — повторить, вдруг Open-Meteo уже ответит");
+            Check(WeatherService.NeedsRetry(old) && WeatherService.NeedsRetry(null), "кэш или ничего — повторить");
+
+            // Windows запускает виджет с ключом — по нему первая загрузка ждёт, пока поднимется сеть
+            Eq("\"C:\\Погода\\WeatherWidget.exe\" --autostart", AutoStart.Command(@"C:\Погода\WeatherWidget.exe"), "команда автозапуска — путь в кавычках и ключ");
+
             // новый запуск программы: часовой пояс для MET берётся из кэша Open-Meteo, иначе — оценка по долготе
             omUp = true;
             WeatherService first = new WeatherService(fakeNet, new WeatherCache(dir), 0);
