@@ -159,6 +159,7 @@ assets/cities.txt            ~2800 large cities in two languages — embedded in
 
   Without a connection the widget retries every 2 minutes, and immediately when Windows reports the network is back.
   On startup the cache is shown instantly while fresh data loads.
+  If Open-Meteo answers late — after MET Norway or the cache are already shown — its data replaces them right away.
 - **Language.** Russian or English; by default the Windows UI language (Russian for Russian Windows,
   English for everything else). The choice from the menu is saved in the settings (`lang=ru|en`).
   Your saved cities are translated in the background when the language changes: the city is looked up

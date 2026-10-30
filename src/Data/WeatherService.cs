@@ -6,7 +6,8 @@ namespace WeatherWidget
 {
     // Откуда брать погоду: Open-Meteo и MET Norway «наперегонки», а без связи — последние данные из кэша.
     // Сначала спрашиваем Open-Meteo; если он не ответил за metDelayMs (или сразу упал) — параллельно
-    // спрашиваем MET Norway и берём первый успешный ответ. Дольше totalTimeoutMs не ждём — тогда кэш.
+    // спрашиваем MET Norway и берём первый успешный ответ. Дольше totalTimeoutMs не ждём — тогда кэш,
+    // а ответ, пришедший позже, подставляем, если он лучше (см. Get с late).
     // Так медленный или недоступный сервис не задерживает погоду на десятки секунд.
     // Методы вызываются из фоновых потоков.
     sealed class WeatherService
@@ -38,7 +39,13 @@ namespace WeatherWidget
         }
 
         // Свежая погода, а если её не получить — кэш с пометкой Stale. null — нет ни того ни другого.
-        public WeatherData Get(City c)
+        public WeatherData Get(City c) { return Get(c, null); }
+
+        // То же, но ответ, опоздавший к возврату, не пропадает: если он лучше того, что вернул Get
+        // (Open-Meteo после MET Norway, любой свежий после кэша), он приходит в late.
+        // Так после включения компьютера, пока сеть скачет, MET Norway не висит до следующего повтора.
+        // late вызывается из фонового потока, возможно ещё до того, как Get вернёт результат.
+        public WeatherData Get(City c, Action<WeatherData> late)
         {
             SourceRace race = new SourceRace();
             race.Start(delegate { return TryOpenMeteo(c); });
@@ -47,15 +54,37 @@ namespace WeatherWidget
                 race.Start(delegate { return TryMetNo(c); });
                 race.Wait(totalTimeoutMs - metDelayMs);
             }
-            WeatherData d = race.Result;
-            if (d != null)
+            WeatherData d = race.Finish();
+            if (d != null) Accept(c, d);
+            else d = Cached(c);
+
+            object gate = new object();
+            WeatherData shown = d;
+            race.OnLate(delegate(WeatherData x)
             {
-                d.FetchedUtc = DateTime.UtcNow;
-                if (d.Source == OpenMeteo.Name) lock (offsets) offsets[Key(c)] = d.UtcOffset;
-                cache.Save(d);
-                return d;
-            }
-            return Cached(c);
+                lock (gate)
+                {
+                    if (!Better(x, shown)) return;
+                    shown = x;
+                    Accept(c, x);
+                }
+                if (late != null) late(x);
+            });
+            return d;
+        }
+
+        // Стоит ли заменить показанные данные пришедшими
+        public static bool Better(WeatherData fresh, WeatherData shown)
+        {
+            if (fresh == null || fresh.Stale) return false;
+            return shown == null || shown.Stale || (fresh.Source == OpenMeteo.Name && shown.Source != OpenMeteo.Name);
+        }
+
+        void Accept(City c, WeatherData d)
+        {
+            d.FetchedUtc = DateTime.UtcNow;
+            if (d.Source == OpenMeteo.Name) lock (offsets) offsets[Key(c)] = d.UtcOffset;
+            cache.Save(d);
         }
 
         // Повторить загрузку через пару минут: свежих данных нет или они от резервного источника
@@ -133,14 +162,16 @@ namespace WeatherWidget
             return Math.Round(c.Lat, 2) + "_" + Math.Round(c.Lon, 2);
         }
 
-        // Несколько источников в фоне; побеждает первый успешный ответ
+        // Несколько источников в фоне; побеждает первый успешный ответ.
+        // Ответы после Finish — опоздавшие: копятся, пока не назначен OnLate, потом идут в него.
         sealed class SourceRace
         {
             readonly object gate = new object();
+            readonly List<WeatherData> pending = new List<WeatherData>();
             WeatherData result;
             int running;
-
-            public WeatherData Result { get { lock (gate) return result; } }
+            bool finished;
+            Action<WeatherData> late;
 
             public void Start(Func<WeatherData> source)
             {
@@ -149,13 +180,38 @@ namespace WeatherWidget
                 {
                     WeatherData d = null;
                     try { d = source(); } catch { }
+                    Action<WeatherData> handler = null;
                     lock (gate)
                     {
                         running--;
-                        if (result == null && d != null) result = d;
+                        if (d != null)
+                        {
+                            if (!finished) { if (result == null) result = d; }
+                            else if (late != null) handler = late;
+                            else pending.Add(d);
+                        }
                         Monitor.PulseAll(gate);
                     }
+                    if (handler != null) try { handler(d); } catch { }
                 });
+            }
+
+            // Больше не ждём: результат гонки (null — никто не ответил)
+            public WeatherData Finish()
+            {
+                lock (gate) { finished = true; return result; }
+            }
+
+            public void OnLate(Action<WeatherData> handler)
+            {
+                List<WeatherData> early;
+                lock (gate)
+                {
+                    late = handler;
+                    early = new List<WeatherData>(pending);
+                    pending.Clear();
+                }
+                foreach (WeatherData d in early) try { handler(d); } catch { }
             }
 
             // true — есть результат; false — все запущенные источники упали или вышло время

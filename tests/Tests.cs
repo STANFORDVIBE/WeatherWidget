@@ -48,6 +48,7 @@ namespace WeatherWidget.Tests
             Run("Кэш погоды", Cache);
             Run("Цепочка источников: Open-Meteo → MET Norway → кэш", ServiceFallback);
             Run("Медленная сеть: источники наперегонки", SlowNetwork);
+            Run("Опоздавший ответ Open-Meteo подставляется", LateAnswer);
             Run("Сбои источников — в журнал", SourceFailures);
             Run("Давность данных и приписка к подсказке", AgeAndNotes);
             Run("Окно: размер при запуске с разным масштабом", WindowSizeOnStart);
@@ -782,6 +783,50 @@ namespace WeatherWidget.Tests
             Check(d != null && d.Stale && sw.ElapsedMilliseconds < 2200, "оба зависли — кэш не позже общего лимита (" + sw.ElapsedMilliseconds + " мс)");
 
             System.Threading.Thread.Sleep(4500);   // дождаться зависших «запросов», прежде чем удалять папку
+            Directory.Delete(dir, true);
+        }
+
+        // Сеть после включения скачет: Open-Meteo отвечает уже после MET Norway — его ответ не пропадает
+        static void LateAnswer()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "WeatherWidget.Tests", Guid.NewGuid().ToString("N"));
+            string omJson = Fixture("forecast.json"), metJson = Fixture("metno.json");
+            int omDelay = 0, metDelay = 0;
+            Func<string, string> net = delegate (string url)
+            {
+                bool om = url.Contains("open-meteo");
+                System.Threading.Thread.Sleep(om ? omDelay : metDelay);
+                return om ? omJson : metJson;
+            };
+            WeatherCache cache = new WeatherCache(dir);
+            WeatherService svc = new WeatherService(net, cache, 0, 300, 1500);
+            List<WeatherData> late = new List<WeatherData>();
+            Action<WeatherData> onLate = delegate (WeatherData x) { lock (late) late.Add(x); };
+
+            omDelay = 800;   // Open-Meteo медленный, MET Norway успел первым
+            WeatherData d = svc.Get(Moscow, onLate);
+            Check(d != null && d.Source == MetNo.Name, "сначала — MET Norway");
+            System.Threading.Thread.Sleep(1000);
+            lock (late) Check(late.Count == 1 && late[0].Source == OpenMeteo.Name, "опоздавший Open-Meteo пришёл следом");
+            Eq(OpenMeteo.Name, cache.Load(Moscow, TimeSpan.MaxValue).Source, "и он же в кэше");
+
+            lock (late) late.Clear();
+            omDelay = 2500; metDelay = 3000;   // оба не успели к общему лимиту (Open-Meteo — к 2,5 с, MET Norway — к 3,3 с)
+            d = svc.Get(Moscow, onLate);
+            Check(d != null && d.Stale, "пока — кэш");
+            System.Threading.Thread.Sleep(1300);
+            lock (late) Check(late.Count == 1 && late[0].Source == OpenMeteo.Name, "Open-Meteo пришёл первым из опоздавших");
+            System.Threading.Thread.Sleep(800);
+            lock (late) Eq(1, late.Count, "MET Norway после Open-Meteo уже не подставляем");
+            Eq(OpenMeteo.Name, cache.Load(Moscow, TimeSpan.MaxValue).Source, "кэш не затёрт резервным");
+
+            lock (late) late.Clear();
+            omDelay = 0; metDelay = 0;
+            d = svc.Get(Moscow, onLate);
+            System.Threading.Thread.Sleep(300);
+            Check(d.Source == OpenMeteo.Name && late.Count == 0, "Open-Meteo вовремя — опоздавших нет");
+
+            Check(!WeatherService.Better(d, d), "Open-Meteo не лучше Open-Meteo");
             Directory.Delete(dir, true);
         }
 

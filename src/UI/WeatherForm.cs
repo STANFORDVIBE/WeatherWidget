@@ -418,8 +418,14 @@ namespace WeatherWidget
                     SafeInvoke(delegate { if (c == target && loading) ShowNow(c, old); });
                 }
                 if (delayMs > 0) Thread.Sleep(delayMs);
-                WeatherData d = weather.Get(c);   // Open-Meteo и MET Norway наперегонки, иначе кэш
-                SafeInvoke(delegate { OnWeather(c, d); });
+                // Open-Meteo и MET Norway наперегонки, иначе кэш; опоздавший, но лучший ответ — следом.
+                // Опоздавший может обогнать основной — тогда основной уже не показываем.
+                bool upgraded = false;   // только в потоке окна
+                WeatherData d = weather.Get(c, delegate(WeatherData better)
+                {
+                    SafeInvoke(delegate { upgraded = true; OnWeather(c, better); });
+                });
+                SafeInvoke(delegate { if (!upgraded) OnWeather(c, d); });
             });
         }
 
